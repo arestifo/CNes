@@ -72,3 +72,4 @@ fabric.properties
 
 ###### Project specific files
 roms/*
+*.nes
