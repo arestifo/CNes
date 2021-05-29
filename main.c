@@ -1,22 +1,41 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include "nes_cart.h"
+#include "include/nes.h"
 
 // Entry point of CNES
 // Initializes everything and begins ROM execution
+FILE *log_f;
+static bool g_shutdown = false;
+
 int main(int argc, char **argv) {
-  // Validate CMDline input
+  struct cart cart;
+  struct cpu cpu;
+  char *cart_fn;
+  int nextchar;
+
+  printf("cnes v0.1 starting\n");
+
+  // Logging TODO: This isn't the cleanest way of doing this
+  remove("../logs/cnes_cpu.log");
+  log_f = nes_fopen("../logs/cnes_cpu.log", "w");
+//  log_f = stdout;
+
+  // Read command line arguments
   if (argc != 2) {
-    printf("Invalid command line arguments.\n");
+    printf("%s: invalid command line arguments.\n", argv[0]);
     exit(EXIT_FAILURE);
   }
-  char *cart_fn = argv[1];
+  cart_fn = argv[1];
 
-  // Read in the cartridge and validate its header
-  struct nes_cart cart;
-  read_cart(&cart, cart_fn);
+  // Initialize everything
+  cart_init(&cart, cart_fn);
+  cpu_init(&cpu, &cart);
 
-  // start_ppu
-  // start_cpu
-  // create_cnes_window
+  // Tick the CPU on each key press
+  while (!g_shutdown) {
+    cpu_tick(&cpu);
+  }
+
+  // Clean up
+  cart_destroy(&cart);
+  cpu_destroy(&cpu);
+  nes_fclose(log_f);
 }

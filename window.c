@@ -1,6 +1,7 @@
-#include "cnes_window.h"
+#include "include/window.h"
 #include "SDL.h"
-void cnes_create_window(void) {
+
+void window_create(void) {
   // Init SDL
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     printf("SDL_Init() failed: %s\n", SDL_GetError());
