@@ -8,7 +8,6 @@ FILE   *nes_fopen(char *fn, char *mode);
 size_t  nes_fread(void *ptr, size_t sz, size_t n, FILE *f);
 size_t  nes_fwrite(void *ptr, size_t sz, size_t n, FILE *f);
 int     nes_fclose(FILE *f);
-
-
+char   *opcode_tos(u8 opcode);
 
 #endif

@@ -1,4 +1,5 @@
 #include "include/cart.h"
+#include "include/util.h"
 
 void cart_init(struct cart *cart, char *cart_fn) {
   FILE *cart_f;
@@ -35,10 +36,6 @@ void cart_init(struct cart *cart, char *cart_fn) {
     printf("cart_init: get_mapper=%d\n", cart->mapper);
   }
 
-#ifdef DEBUG
-  printf("cart_init: file pos=0x%lx\n", ftell(cart_f));
-#endif
-
   // Is a trainer present? Bit 3 (mask 0x04) is the trainer present bit
   if (cart->header.flags6 & 0x04) {
     // Just ignore the trainer, advance over it
@@ -50,7 +47,6 @@ void cart_init(struct cart *cart, char *cart_fn) {
   nes_fread(cart->prg_rom, PRGROM_BLOCK_SZ, cart->header.prgrom_n, cart_f);
 
 #ifdef DEBUG
-  printf("cart_init: file pos=0x%lx\n", ftell(cart_f));
   printf("Loaded cart prgrom=16K*%d, chrrom=8K*%d, mapper=%d, trainer=%s\n",
          cart->header.prgrom_n, cart->header.chrrom_n, cart->mapper,
          cart->header.flags6 & 0x04 ? "yes" : "no");

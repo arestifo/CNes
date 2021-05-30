@@ -1,4 +1,6 @@
 #include "include/cpu.h"
+#include "include/mem.h"
+#include "include/util.h"
 
 const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 
@@ -7,7 +9,7 @@ void cpu_init(struct cpu *cpu, struct cart *cart) {
   cpu->a = 0;
   cpu->x = 0;
   cpu->y = 0;
-  cpu->cyc = 0;
+  cpu->cyc = 7;
   cpu->sr = 0x24;
   cpu->sp = 0xFD;
 
@@ -24,7 +26,7 @@ void cpu_init(struct cpu *cpu, struct cart *cart) {
 //  cpu->pc = read16(cpu->mem, RESET_VEC);
 }
 
-u16 get_addr(struct cpu *cpu, u16 addr, addrmode mode) {
+u16 get_addr(struct cpu *cpu, u16 addr, addrmode mode, bool inc_cyc) {
   switch (mode) {
     case ABS:
     case ZP:
@@ -38,11 +40,11 @@ u16 get_addr(struct cpu *cpu, u16 addr, addrmode mode) {
     case REL:
       return cpu->pc + ((s8) addr);
     case ABS_IND:
-      return read16(cpu->mem, addr);
+      return read16(cpu, addr, inc_cyc);
     case ZP_IDX_IND:
-      return read16(cpu->mem, addr + cpu->x);
+      return read16(cpu, addr + cpu->x, inc_cyc);
     case ZP_IND_IDX_Y:
-      return read16(cpu->mem, addr) + cpu->y;
+      return read16(cpu, addr, inc_cyc) + cpu->y;
     case IMPL_ACCUM:
     case IMM:
     default:
@@ -82,32 +84,236 @@ addrmode get_addrmode(u8 opcode) {
 
 void cpu_tick(struct cpu *cpu) {
   // Get opcode at current PC
-  u8 opcode;
+  u8 opcode, result;
   u16 operand, addr;
   addrmode mode;
 
-  opcode = read8(cpu->mem, cpu->pc);
+  // Output current CPU state for debugging
+  // We have to re-do all instruction fetching here because we don't want to
+  // increment cycles
+#ifdef DEBUG
+  u8 debug_opcode;
+  u16 debug_operand;
+  addrmode debug_mode;
+
+  debug_opcode = read8(cpu, cpu->pc, false);
+  debug_mode = get_addrmode(debug_opcode);
+  if (OPERAND_SIZES[debug_mode] == 1)
+    debug_operand = read8(cpu, cpu->pc + 1, false);
+  else if (OPERAND_SIZES[debug_mode] == 2)
+    debug_operand = read16(cpu, cpu->pc + 1, false);
+  else  // Just to quiet the compiler
+    debug_operand = 0;
+  dump_cpu(cpu, debug_opcode, debug_operand, debug_mode);
+#endif
+
+  opcode = read8(cpu, cpu->pc, true);
   mode = get_addrmode(opcode);
 
   if (OPERAND_SIZES[mode] == 1)
-    operand = read8(cpu->mem, cpu->pc + 1);
-  else
-    operand = read16(cpu->mem, cpu->pc + 1);
+    operand = read8(cpu, cpu->pc + 1, true);
+  else if (OPERAND_SIZES[mode] == 2)
+    operand = read16(cpu, cpu->pc + 1, true);
 
-  // Output current CPU state for debugging
-#ifdef DEBUG
-  dump_cpu(cpu, opcode, operand, mode);
-#endif
   cpu->pc += OPERAND_SIZES[mode] + 1;  // +1 for the opcode itself
+  // TODO: These opcodes were implemented in the order they appeared in nestest :)
+  // TODO: rearrange them later for clarity
   switch (opcode) {
     case 0x4C:  // JMP
     case 0x6C:
-      cpu->pc = get_addr(cpu, operand, mode);
+      cpu->pc = get_addr(cpu, operand, mode, true);
+      break;
+    case 0xA2:  // LDX
+    case 0xA6:
+    case 0xB6:
+    case 0xAE:
+    case 0xBE:
+      if (mode == IMM)
+        cpu->x = operand;
+      else {
+        addr = get_addr(cpu, operand, mode, true);
+        cpu->x = read8(cpu, addr, true);
+      }
+      set_nz(cpu, cpu->x);
+      break;
+    case 0x86:  // STX
+    case 0x96:
+    case 0x8E:
+      addr = get_addr(cpu, operand, mode, true);
+      write8(cpu, addr, operand, true);
+      break;
+    case 0x20:  // JSR
+      addr = get_addr(cpu, operand, mode, true);
+      push16(cpu, cpu->pc - 1, true);
+      cpu->pc = addr;
+      break;
+    case 0x60:  // RTS
+      addr = pop16(cpu, true) + 1;
+      cpu->cyc++;  // From adjusting the PC (not sure why JSR doesn't need this)
+      cpu->pc = addr;
+      break;
+    case 0xEA:  // NOP
+      cpu->cyc++;
+      break;
+    case 0x38:  // SEC
+      cpu->sr |= C_MASK;
+      cpu->cyc++;
+      break;
+    case 0xF8:  // SED
+      cpu->sr |= D_MASK;
+      cpu->cyc++;
+      break;
+    case 0x78:  // SEI
+      cpu->sr |= I_MASK;
+      cpu->cyc++;
+      break;
+    case 0x18:  // CLC
+      cpu->sr &= ~C_MASK;
+      cpu->cyc++;
+      break;
+    case 0xD8:  // CLD
+      cpu->sr &= ~D_MASK;
+      cpu->cyc++;
+      break;
+    case 0x58:  // CLI
+      cpu->sr &= ~I_MASK;
+      cpu->cyc++;
+      break;
+    case 0xB8:  // CLV
+      cpu->sr &= ~V_MASK;
+      cpu->cyc++;
+      break;
+    case 0x90:  // BCC
+      addr = get_addr(cpu, operand, mode, true);
+      if (!(cpu->sr & C_MASK)) {
+        cpu->pc = addr;
+        cpu->cyc++;
+      }
+      break;
+    case 0xB0:  // BCS
+      addr = get_addr(cpu, operand, mode, true);
+      if (cpu->sr & C_MASK) {
+        cpu->pc = addr;
+        cpu->cyc++;
+      }
+      break;
+    case 0xD0:  // BNE
+      addr = get_addr(cpu, operand, mode, true);
+      if (!(cpu->sr & Z_MASK)) {
+        cpu->pc = addr;
+        cpu->cyc++;
+      }
+      break;
+    case 0xF0:  // BEQ
+      addr = get_addr(cpu, operand, mode, true);
+      if (cpu->sr & Z_MASK) {
+        cpu->pc = addr;
+        cpu->cyc++;
+      }
+      break;
+    case 0x10:  // BPL
+      addr = get_addr(cpu, operand, mode, true);
+      if (!(cpu->sr & N_MASK)) {
+        cpu->pc = addr;
+        cpu->cyc++;
+      }
+      break;
+    case 0x30:  // BMI
+      addr = get_addr(cpu, operand, mode, true);
+      if (cpu->sr & N_MASK) {
+        cpu->pc = addr;
+        cpu->cyc++;
+      }
+      break;
+    case 0x50:  // BVC
+      addr = get_addr(cpu, operand, mode, true);
+      if (!(cpu->sr & V_MASK)) {
+        cpu->pc = addr;
+        cpu->cyc++;
+      }
+      break;
+    case 0x70:  // BVS
+      addr = get_addr(cpu, operand, mode, true);
+      if (cpu->sr & V_MASK) {
+        cpu->pc = addr;
+        cpu->cyc++;
+      }
+      break;
+    case 0xA9:  // LDA
+    case 0xA5:
+    case 0xB5:
+    case 0xAD:
+    case 0xBD:
+    case 0xB9:
+    case 0xA1:
+    case 0xB1:
+      if (mode == IMM)
+        cpu->a = operand;
+      else {
+        addr = get_addr(cpu, operand, mode, true);
+        cpu->a = read8(cpu, addr, true);
+      }
+      set_nz(cpu, cpu->a);
+      break;
+    case 0x85:  // STA
+    case 0x95:
+    case 0x8D:
+    case 0x9D:
+    case 0x99:
+    case 0x81:
+    case 0x91:
+      addr = get_addr(cpu, operand, mode, true);
+      write8(cpu, addr, cpu->a, true);
+      break;
+    case 0x24:  // BIT
+    case 0x2C:
+      addr = get_addr(cpu, operand, mode, true);
+      result = read8(cpu, addr, true) & cpu->a;
+      set_nz(cpu, result);
+
+      // Set overflow bit
+      if (result & 0x40)
+        cpu->sr |= V_MASK;
+      else
+        cpu->sr &= ~V_MASK;
+      break;
+    case 0x48:  // PHA
+      push8(cpu, cpu->a, true);
+      break;
+    case 0x08:  // PHP
+      push8(cpu, cpu->sr | B_MASK, true);
+      break;
+    case 0x68:  // PLA
+      cpu->a = pop8(cpu, true);
+      set_nz(cpu, cpu->a);
+      break;
+    case 0x28:  // PLP
+      // PLP ignores sr bits 4 and 5
+      result = pop8(cpu, true) & ~0x30;
+      cpu->sr = result;
       break;
     default:
-      printf("cpu_tick: unsupported op 0x%X\n", opcode);
+      printf("cpu_tick: unsupported op 0x%02X (%s)\n", opcode,
+             opcode_tos(opcode));
       exit(EXIT_FAILURE);
   }
+}
+
+// Sets the negative and zero flags based on the result of a computation
+// Can't set carry and overflow flag here (i think?) because they are set
+// differently depending on the instruction
+void set_nz(struct cpu *cpu, u8 result) {
+  // Negative flag
+  if (result & 0x80)
+    cpu->sr |= N_MASK;
+  else
+    cpu->sr &= ~N_MASK;
+
+  // Zero flag
+  if (!result)
+    cpu->sr |= Z_MASK;
+  else
+    cpu->sr &= ~Z_MASK;
 }
 
 void cpu_destroy(struct cpu *cpu) {
@@ -142,41 +348,42 @@ void dump_cpu(struct cpu *cpu, u8 opcode, u16 operand, addrmode mode) {
       fprintf(log_f, " $%04X                       ", operand);
       break;
     case ABS_IND:
-      addr = get_addr(cpu, operand, mode);
+      addr = get_addr(cpu, operand, mode, false);
       fprintf(log_f, " ($%04X) = %04X              ", operand, addr);
       break;
     case ABS_IDX_X:
     case ABS_IDX_Y:
-      addr = get_addr(cpu, operand, mode);
+      addr = get_addr(cpu, operand, mode, false);
       fprintf(log_f, " $%04X,%s @ %04X = %02X         ", operand,
-              mode == ABS_IDX_X ? "X" : "Y", addr, read8(cpu->mem, addr));
+              mode == ABS_IDX_X ? "X" : "Y", addr, read8(cpu, addr, false));
       break;
     case REL:
       // Add two because we haven't advanced the PC when this function is called
-      addr = get_addr(cpu, operand, mode) + 2;
+      addr = get_addr(cpu, operand, mode, false) + 2;
       fprintf(log_f, " $%04X                       ", addr);
       break;
     case IMM:
       fprintf(log_f, " #$%02X                        ", operand);
       break;
     case ZP:
-      fprintf(log_f, " $%02X = %02X                    ", operand, read8(cpu->mem, operand));
+      fprintf(log_f, " $%02X = %02X                    ", operand,
+              read8(cpu, operand, false));
       break;
     case ZP_IDX_X:
     case ZP_IDX_Y:
-      addr = get_addr(cpu, operand, mode);
+      addr = get_addr(cpu, operand, mode, false);
       fprintf(log_f, " $%02X,%s @ %02X = %02X             ", operand,
-              mode == ZP_IDX_X ? "X" : "Y", addr, read8(cpu->mem, addr));
+              mode == ZP_IDX_X ? "X" : "Y", addr, read8(cpu, addr, false));
       break;
     case ZP_IDX_IND:
-      addr = get_addr(cpu, operand, mode);
+      addr = get_addr(cpu, operand, mode, false);
       fprintf(log_f, " ($%02X,X) @ %02X = %04X = %02X    ", operand,
-              operand + cpu->x, addr, read8(cpu->mem, addr));
+              operand + cpu->x, addr, read8(cpu, addr, false));
       break;
     case ZP_IND_IDX_Y:
-      addr = get_addr(cpu, operand, mode);
+      addr = get_addr(cpu, operand, mode, false);
       fprintf(log_f, " ($%02X),Y = %04X @ %04X = %02X  ", operand,
-              read16(cpu->mem, operand), addr, read8(cpu->mem, addr));
+              read16(cpu, operand, false), addr, read8(cpu, addr, false));
       break;
     case IMPL_ACCUM:
       fprintf(log_f, "                             ");
@@ -190,220 +397,4 @@ void dump_cpu(struct cpu *cpu, u8 opcode, u16 operand, addrmode mode) {
   // TODO: Add PPU cycles
   fprintf(log_f, "A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3d,%3d CYC:%llu\n",
           cpu->a, cpu->x, cpu->y, cpu->sr, cpu->sp, 0, 0, cpu->cyc);
-}
-
-// Gets assembler mnemonic from opcode
-char *opcode_tos(u8 opcode) {
-  switch (opcode) {
-    case 0x69:
-    case 0x65:
-    case 0x75:
-    case 0x6D:
-    case 0x7D:
-    case 0x79:
-    case 0x61:
-    case 0x71:
-      return "ADC";
-    case 0x29:
-    case 0x25:
-    case 0x35:
-    case 0x2D:
-    case 0x3D:
-    case 0x39:
-    case 0x21:
-    case 0x31:
-      return "AND";
-    case 0x0A:
-    case 0x06:
-    case 0x16:
-    case 0x0E:
-    case 0x1E:
-      return "ASL";
-    case 0x90:
-      return "BCC";
-    case 0xB0:
-      return "BCS";
-    case 0xF0:
-      return "BEQ";
-    case 0x24:
-    case 0x2C:
-      return "BIT";
-    case 0x30:
-      return "BMI";
-    case 0xD0:
-      return "BNE";
-    case 0x10:
-      return "BPL";
-    case 0x00:
-      return "BRK";
-    case 0x50:
-      return "BVC";
-    case 0x70:
-      return "BVS";
-    case 0x18:
-      return "CLC";
-    case 0xD8:
-      return "CLD";
-    case 0x58:
-      return "CLI";
-    case 0xB8:
-      return "CLV";
-    case 0xC9:
-    case 0xC5:
-    case 0xD5:
-    case 0xCD:
-    case 0xDD:
-    case 0xD9:
-    case 0xC1:
-    case 0xD1:
-      return "CMP";
-    case 0xE0:
-    case 0xE4:
-    case 0xEC:
-      return "CPX";
-    case 0xC0:
-    case 0xC4:
-    case 0xCC:
-      return "CPY";
-    case 0xC6:
-    case 0xD6:
-    case 0xCE:
-    case 0xDE:
-      return "DEC";
-    case 0xCA:
-      return "DEX";
-    case 0x88:
-      return "DEY";
-    case 0x49:
-    case 0x45:
-    case 0x55:
-    case 0x4D:
-    case 0x5D:
-    case 0x59:
-    case 0x41:
-    case 0x51:
-      return "EOR";
-    case 0xE6:
-    case 0xF6:
-    case 0xEE:
-    case 0xFE:
-      return "INC";
-    case 0xE8:
-      return "INX";
-    case 0xC8:
-      return "INY";
-    case 0x4C:
-    case 0x6C:
-      return "JMP";
-    case 0x20:
-      return "JSR";
-    case 0xA9:
-    case 0xA5:
-    case 0xB5:
-    case 0xAD:
-    case 0xBD:
-    case 0xB9:
-    case 0xA1:
-    case 0xB1:
-      return "LDA";
-    case 0xA2:
-    case 0xA6:
-    case 0xB6:
-    case 0xAE:
-    case 0xBE:
-      return "LDX";
-    case 0xA0:
-    case 0xA4:
-    case 0xB4:
-    case 0xAC:
-    case 0xBC:
-      return "LDY";
-    case 0x4A:
-    case 0x46:
-    case 0x56:
-    case 0x4E:
-    case 0x5E:
-      return "LSR";
-    case 0xEA:
-      return "NOP";
-    case 0x09:
-    case 0x05:
-    case 0x15:
-    case 0x0D:
-    case 0x1D:
-    case 0x19:
-    case 0x01:
-    case 0x11:
-      return "ORA";
-    case 0x48:
-      return "PHA";
-    case 0x08:
-      return "PHP";
-    case 0x68:
-      return "PLA";
-    case 0x28:
-      return "PLP";
-    case 0x2A:
-    case 0x26:
-    case 0x36:
-    case 0x2E:
-    case 0x3E:
-      return "ROL";
-    case 0x6A:
-    case 0x66:
-    case 0x76:
-    case 0x6E:
-    case 0x7E:
-      return "ROR";
-    case 0x40:
-      return "RTI";
-    case 0x60:
-      return "RTS";
-    case 0xE9:
-    case 0xE5:
-    case 0xF5:
-    case 0xED:
-    case 0xFD:
-    case 0xF9:
-    case 0xE1:
-    case 0xF1:
-      return "SBC";
-    case 0x38:
-      return "SEC";
-    case 0xF8:
-      return "SED";
-    case 0x78:
-      return "SEI";
-    case 0x85:
-    case 0x95:
-    case 0x8D:
-    case 0x9D:
-    case 0x99:
-    case 0x81:
-    case 0x91:
-      return "STA";
-    case 0x86:
-    case 0x96:
-    case 0x8E:
-      return "STX";
-    case 0x84:
-    case 0x94:
-    case 0x8C:
-      return "STY";
-    case 0xAA:
-      return "TAX";
-    case 0xA8:
-      return "TAY";
-    case 0xBA:
-      return "TSX";
-    case 0x8A:
-      return "TXA";
-    case 0x9A:
-      return "TXS";
-    case 0x98:
-      return "TYA";
-    default:
-      printf("opcode_tos: unknown opcode 0x%02X\n", opcode);
-      return "UK?";
-  }
 }

@@ -1,4 +1,6 @@
 #include "include/nes.h"
+#include "include/util.h"
+#include "include/cpu.h"
 
 // Entry point of CNES
 // Initializes everything and begins ROM execution
