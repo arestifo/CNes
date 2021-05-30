@@ -75,3 +75,5 @@ roms/*
 *.nes
 logs/
 *.log
+.idea/
+.DS_Store
