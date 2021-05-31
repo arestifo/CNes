@@ -1,6 +1,7 @@
 #include "include/nes.h"
 #include "include/util.h"
 #include "include/cpu.h"
+#include "include/ppu.h"
 
 // Entry point of CNES
 // Initializes everything and begins ROM execution
@@ -8,17 +9,15 @@ FILE *log_f;
 static bool g_shutdown = false;
 
 int main(int argc, char **argv) {
-  struct cart cart;
-  struct cpu cpu;
+  struct nes nes;
   char *cart_fn;
   int nextchar;
 
   printf("cnes v0.1 starting\n");
 
-  // Logging TODO: This isn't the cleanest way of doing this
+  // Logging
   remove("../logs/cnes_cpu.log");
-  log_f = nes_fopen("../logs/cnes_cpu.log", "w");
-//  log_f = stdout;
+  log_f = nes_fopen("../logs/cnes.log", "w");
 
   // Read command line arguments
   if (argc != 2) {
@@ -28,16 +27,19 @@ int main(int argc, char **argv) {
   cart_fn = argv[1];
 
   // Initialize everything
-  cart_init(&cart, cart_fn);
-  cpu_init(&cpu, &cart);
+  nes_init(&nes, cart_fn);
 
-  // Tick the CPU on each key press
+  // Tick the CPU on each key press and
   while (!g_shutdown) {
-    cpu_tick(&cpu);
+    cpu_tick(nes.cpu);
+
+    // Three PPU cycles per CPU cycle
+    ppu_tick(nes.ppu);
+    ppu_tick(nes.ppu);
+    ppu_tick(nes.ppu);
   }
 
   // Clean up
-  cart_destroy(&cart);
-  cpu_destroy(&cpu);
+  nes_destroy(&nes);
   nes_fclose(log_f);
 }

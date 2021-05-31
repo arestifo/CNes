@@ -1,12 +1,11 @@
 #ifndef CNES_CPU_H
 #define CNES_CPU_H
 #include "nes.h"
-#include "cart.h"
 
 // Flag operations:
-// Set:   cpu->sr |=  C_MASK
-// Clear: cpu->sr &= ~C_MASK
-// Test:  if (cpu->sr & C_MASK)
+// Set:   cpu->p |=  C_MASK
+// Clear: cpu->p &= ~C_MASK
+// Test:  if (cpu->p & C_MASK)
 
 #define C_BIT 0
 #define Z_BIT 1
@@ -26,14 +25,14 @@
 #define V_MASK 0x40
 #define N_MASK 0x80
 
-#define SET_BIT(num, n, x) ((num & ~(1 << (n))) | ((x) << (n)))
+#define SET_BIT(num, n, x) ((num) = (((num) & ~(1 << (n))) | ((x) << (n))))
 
 #define NMI_VEC    0xFFFA
 #define RESET_VEC  0xFFFC
 #define IRQ_VEC    0xFFFE
 #define STACK_BASE 0x0100
 
-#define CPU_MEMORY_SZ 0x10000
+#define CPU_MEM_SZ 0x10000
 
 // There are four addressing modes that can incur page cross penalties:
 // Absolute,X, Absolute,Y, (Indirect),Y, and Relative
@@ -48,7 +47,7 @@ struct cpu {
   u8  y;       // Y register
   u16 pc;      // Program counter register
   u8  sp;      // Stack pointer register
-  u8  sr;      // Status register
+  u8  p;      // Status register
 
   u64 cyc;     // Cycles
   u8  *mem;    // Pointer to main memory
@@ -75,18 +74,15 @@ typedef enum addrmode {
   IMPL_ACCUM
 } addrmode;
 
-// Array of operand sizes (in bytes), indexed by addressing mode
-extern const int OPERAND_SIZES[];
 extern FILE *log_f;
 
 // Gets addressing mode from opcode.
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
 addrmode get_addrmode(u8 opcode);
-u16 get_addr(struct cpu *cpu, u16 addr, addrmode mode, bool is_write);
-u16 dummy_get_addr(struct cpu *cpu, u16 addr, addrmode mode);
+u16 resolve_addr(struct cpu *cpu, u16 addr, addrmode mode);
 void set_nz(struct cpu *cpu, u8 result);
-void cpu_init(struct cpu *cpu, struct cart *cart);
+void cpu_init(struct cpu *cpu, struct nes *nes);
 void cpu_destroy(struct cpu *cpu);
 void cpu_tick(struct cpu *cpu);
 
