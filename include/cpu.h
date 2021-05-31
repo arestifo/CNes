@@ -8,6 +8,15 @@
 // Clear: cpu->sr &= ~C_MASK
 // Test:  if (cpu->sr & C_MASK)
 
+#define C_BIT 0
+#define Z_BIT 1
+#define I_BIT 2
+#define D_BIT 3
+#define B_BIT 4
+#define U_BIT 5
+#define V_BIT 6
+#define N_BIT 7
+
 #define C_MASK 0x01
 #define Z_MASK 0x02
 #define I_MASK 0x04
@@ -17,12 +26,20 @@
 #define V_MASK 0x40
 #define N_MASK 0x80
 
+#define SET_BIT(num, n, x) ((num & ~(1 << (n))) | ((x) << (n)))
+
 #define NMI_VEC    0xFFFA
 #define RESET_VEC  0xFFFC
 #define IRQ_VEC    0xFFFE
 #define STACK_BASE 0x0100
 
 #define CPU_MEMORY_SZ 0x10000
+
+// There are four addressing modes that can incur page cross penalties:
+// Absolute,X, Absolute,Y, (Indirect),Y, and Relative
+// All instructions using these addressing modes incur page cross penalties
+// UNLESS they do a write e.g. ASL, LSR, ROL, ROR, STA, INC, DEC
+#define PAGE_CROSSED(a, b) (((a) & 0x0100) != ((b) & 0x0100))
 
 // The NES uses a MOS Technology 6502 CPU with minimal modifications
 struct cpu {
@@ -66,7 +83,8 @@ extern FILE *log_f;
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
 addrmode get_addrmode(u8 opcode);
-u16 get_addr(struct cpu *cpu, u16 addr, addrmode mode, bool inc_cyc);
+u16 get_addr(struct cpu *cpu, u16 addr, addrmode mode, bool is_write);
+u16 dummy_get_addr(struct cpu *cpu, u16 addr, addrmode mode);
 void set_nz(struct cpu *cpu, u8 result);
 void cpu_init(struct cpu *cpu, struct cart *cart);
 void cpu_destroy(struct cpu *cpu);
@@ -74,4 +92,5 @@ void cpu_tick(struct cpu *cpu);
 
 // Debugging util functions
 void dump_cpu(struct cpu *cpu, u8 opcode, u16 operand, addrmode mode);
+
 #endif

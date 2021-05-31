@@ -276,6 +276,6 @@ char *opcode_tos(u8 opcode) {
       return "TYA";
     default:
       printf("opcode_tos: unknown opcode 0x%02X\n", opcode);
-      return "UK?";
+      return "UNK";
   }
 }
