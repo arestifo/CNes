@@ -2,34 +2,29 @@
 #define CNES_PPU_H
 #include "nes.h"
 
-#define NUM_PPUREGS 9
+enum ppuregs {
+  PPUCTRL, PPUMASK, PPUSTATUS, OAMADDR, OAMDATA, PPUSCROLL, PPUADDR, PPUDATA
+};
+
+
+#define NUM_PPUREGS 8
 #define PPU_MEM_SZ 0x4000
 #define OAM_SZ     0x0100
 
-typedef enum {
-  PPUCTRL,
-  PPUMASK,
-  PPUSTATUS,
-  OAMADDR,
-  OAMDATA,
-  PPUSCROLL,
-  PPUADDR,
-  PPUDATA,
-  OAMDMA
-} ppureg;
-
 struct ppu {
   u8 *regs;  // PPU internal registers
-  u8 *mem;   //
-  u8 *oam;
+  u8 *mem;   // PPU memory
+  u8 *oam;   // PPU Object Attribute Memory
 };
 
 // PPU register access
-u8   ppu_read(ppureg reg);
-void ppu_write(ppureg reg, u8 val);
+// reg is an int between 0 and 7 that represents the last digit of the PPU
+// register being accessed
+u8   ppu_read(struct nes *nes, u8 reg);
+void ppu_write(struct nes *nes, u8 reg, u8 val);
 
-void ppu_init(struct ppu *ppu, struct nes *nes);
-void ppu_tick(struct ppu *ppu);
-void ppu_destroy(struct ppu *ppu);
+void ppu_init(struct nes *nes);
+void ppu_tick(struct nes *nes);
+void ppu_destroy(struct nes *nes);
 
 #endif

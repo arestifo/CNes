@@ -5,17 +5,17 @@
 
 const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 
-void cpu_init(struct cpu *cpu, struct nes *nes) {
+void cpu_init(struct nes *nes) {
+  struct cpu *cpu;
+
   // NES power up state
+  cpu = nes->cpu;
   cpu->a = 0;
   cpu->x = 0;
   cpu->y = 0;
   cpu->cyc = 7;
   cpu->p = 0x24;
   cpu->sp = 0xFD;
-
-  // Set up CPU memory map
-  cpu->mem = nes_malloc(CPU_MEM_SZ);
 
   // Load PRG ROM into CPU memory
   // TODO: Support more than mapper 0 here (bank switching)
@@ -24,11 +24,14 @@ void cpu_init(struct cpu *cpu, struct nes *nes) {
 
   // Set the program counter to the right place
   cpu->pc = 0xC000;  // TODO: REMOVE! This is just for nestest
-//  cpu->pc = cpu_read16(cpu, RESET_VEC, false);
+//  cpu->pc = cpu_read16(nes, RESET_VEC, false);
 }
 
-u16 resolve_addr(struct cpu *cpu, u16 addr, addrmode mode) {
+u16 resolve_addr(struct nes *nes, u16 addr, addrmode mode) {
   u8 low, high;
+  struct cpu *cpu;
+  
+  cpu = nes->cpu;
   switch (mode) {
     case ABS_IDX_X:
       return addr + cpu->x;
@@ -45,18 +48,18 @@ u16 resolve_addr(struct cpu *cpu, u16 addr, addrmode mode) {
       return cpu->pc + ((s8) addr);
     case ABS_IND:
       if (PAGE_CROSSED(addr, addr + 1)) {
-        low = mem_read8(cpu->mem, addr);
-        high = mem_read8(cpu->mem, addr & 0xFF00);
+        low = mem_read8(nes, addr);
+        high = mem_read8(nes, addr & 0xFF00);
         return low | (high << 8);
       }
-      return mem_read16(cpu->mem, addr);
+      return mem_read16(nes, addr);
     case ZP_IDX_IND:
-      low = mem_read8(cpu->mem, (addr + cpu->x) & 0xFF);
-      high = mem_read8(cpu->mem, (addr + cpu->x + 1) & 0xFF);
+      low = mem_read8(nes, (addr + cpu->x) & 0xFF);
+      high = mem_read8(nes, (addr + cpu->x + 1) & 0xFF);
       return low | (high << 8);
     case ZP_IND_IDX_Y:
-      low = mem_read8(cpu->mem, addr);
-      high = mem_read8(cpu->mem, (addr + 1) & 0xFF);
+      low = mem_read8(nes, addr);
+      high = mem_read8(nes, (addr + 1) & 0xFF);
       return (low | (high << 8)) + cpu->y;
     case IMPL_ACCUM:
     case IMM:
@@ -67,9 +70,12 @@ u16 resolve_addr(struct cpu *cpu, u16 addr, addrmode mode) {
 }
 
 static u16
-cpu_resolve_addr(struct cpu *cpu, u16 addr, addrmode mode, bool is_write) {
+cpu_resolve_addr(struct nes *nes, u16 addr, addrmode mode, bool is_write) {
   u8 low, high;
   u16 retval;
+  struct cpu *cpu;
+  
+  cpu = nes->cpu;
   switch (mode) {
     case ABS_IDX_X:
       if (PAGE_CROSSED(addr, addr + cpu->x) || is_write)
@@ -94,22 +100,22 @@ cpu_resolve_addr(struct cpu *cpu, u16 addr, addrmode mode, bool is_write) {
       // For example, JMP ($02FF) *should* read the destination LSB from $02FF
       // and from $0300, but incorrectly reads $02FF and $0200 instead
       if (PAGE_CROSSED(addr, addr + 1)) {
-        low = cpu_read8(cpu, addr);
-        high = cpu_read8(cpu, addr & 0xFF00);
+        low = cpu_read8(nes, addr);
+        high = cpu_read8(nes, addr & 0xFF00);
         return low | (high << 8);
       }
-      return cpu_read16(cpu, addr);
+      return cpu_read16(nes, addr);
     case ZP_IDX_IND:
       cpu->cyc++;
 
       // basically cpu_read16 with zero-page wrapping
-      low = cpu_read8(cpu, (addr + cpu->x) & 0xFF);
-      high = cpu_read8(cpu, (addr + cpu->x + 1) & 0xFF);
+      low = cpu_read8(nes, (addr + cpu->x) & 0xFF);
+      high = cpu_read8(nes, (addr + cpu->x + 1) & 0xFF);
 
       return low | (high << 8);
     case ZP_IND_IDX_Y:
-      low = cpu_read8(cpu, addr);
-      high = cpu_read8(cpu, (addr + 1) & 0xFF);
+      low = cpu_read8(nes, addr);
+      high = cpu_read8(nes, (addr + 1) & 0xFF);
       retval = low | (high << 8);
       if (PAGE_CROSSED(retval, retval + cpu->y) || is_write)
         cpu->cyc++;
@@ -120,7 +126,7 @@ cpu_resolve_addr(struct cpu *cpu, u16 addr, addrmode mode, bool is_write) {
       printf("resolve_addr: requested addr for invalid addr mode\n");
       return 0;
   }
-  return resolve_addr(cpu, addr, mode);
+  return resolve_addr(nes, addr, mode);
 }
 
 // Gets the addressing mode from an opcode. Based on the chart from:
@@ -152,45 +158,47 @@ addrmode get_addrmode(u8 opcode) {
   return IMPL_ACCUM;
 }
 
-void cpu_tick(struct cpu *cpu) {
+void cpu_tick(struct nes *nes) {
   // Get opcode at current PC
   u8 opcode, old_carry;
   u16 operand, addr, result;
   addrmode mode;
   bool v_cond;
+  struct cpu *cpu;
 
   // Output current CPU state for debugging
   // We have to re-do all instruction fetching here because we don't want to
   // increment cycles
-#ifdef DEBUG
+  cpu = nes->cpu;
+#ifdef LOG_OUTPUT
   u8 debug_opcode;
   u16 debug_operand;
   addrmode debug_mode;
 
-  debug_opcode = mem_read8(cpu->mem, cpu->pc);
+  debug_opcode = mem_read8(nes, cpu->pc);
   debug_mode = get_addrmode(debug_opcode);
   if (OPERAND_SIZES[debug_mode] == 1)
-    debug_operand = mem_read8(cpu->mem, cpu->pc + 1);
+    debug_operand = mem_read8(nes, cpu->pc + 1);
   else if (OPERAND_SIZES[debug_mode] == 2)
-    debug_operand = mem_read16(cpu->mem, cpu->pc + 1);
+    debug_operand = mem_read16(nes, cpu->pc + 1);
   else  // Just to quiet the compiler
     debug_operand = 0;
-  dump_cpu(cpu, debug_opcode, debug_operand, debug_mode);
+  dump_cpu(nes, debug_opcode, debug_operand, debug_mode);
 #endif
 
-  opcode = cpu_read8(cpu, cpu->pc);
+  opcode = cpu_read8(nes, cpu->pc);
   mode = get_addrmode(opcode);
 
   if (OPERAND_SIZES[mode] == 1)
-    operand = cpu_read8(cpu, cpu->pc + 1);
+    operand = cpu_read8(nes, cpu->pc + 1);
   else if (OPERAND_SIZES[mode] == 2)
-    operand = cpu_read16(cpu, cpu->pc + 1);
+    operand = cpu_read16(nes, cpu->pc + 1);
 
   cpu->pc += OPERAND_SIZES[mode] + 1;  // +1 for the opcode itself
   switch (opcode) {
     case 0x4C:  // JMP
     case 0x6C:
-      cpu->pc = cpu_resolve_addr(cpu, operand, mode, false);
+      cpu->pc = cpu_resolve_addr(nes, operand, mode, false);
       break;
     case 0xA2:  // LDX
     case 0xA6:
@@ -200,18 +208,18 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         cpu->x = operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        cpu->x = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        cpu->x = cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->x);
+      cpu_set_nz(nes, cpu->x);
       break;
     case 0x20:  // JSR
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
-      push16(cpu, cpu->pc - 1);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
+      push16(nes, cpu->pc - 1);
       cpu->pc = addr;
       break;
     case 0x60:  // RTS
-      addr = pop16(cpu) + 1;
+      addr = pop16(nes) + 1;
       cpu->cyc += 2;  // From adjusting the PC (not sure why JSR doesn't need this)
       cpu->pc = addr;
       break;
@@ -247,56 +255,56 @@ void cpu_tick(struct cpu *cpu) {
       cpu->cyc++;
       break;
     case 0x90:  // BCC
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
       if (!(cpu->p & C_MASK)) {
         cpu->pc = addr;
         cpu->cyc++;
       }
       break;
     case 0xB0:  // BCS
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
       if (cpu->p & C_MASK) {
         cpu->pc = addr;
         cpu->cyc++;
       }
       break;
     case 0xD0:  // BNE
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
       if (!(cpu->p & Z_MASK)) {
         cpu->pc = addr;
         cpu->cyc++;
       }
       break;
     case 0xF0:  // BEQ
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
       if (cpu->p & Z_MASK) {
         cpu->pc = addr;
         cpu->cyc++;
       }
       break;
     case 0x10:  // BPL
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
       if (!(cpu->p & N_MASK)) {
         cpu->pc = addr;
         cpu->cyc++;
       }
       break;
     case 0x30:  // BMI
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
       if (cpu->p & N_MASK) {
         cpu->pc = addr;
         cpu->cyc++;
       }
       break;
     case 0x50:  // BVC
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
       if (!(cpu->p & V_MASK)) {
         cpu->pc = addr;
         cpu->cyc++;
       }
       break;
     case 0x70:  // BVS
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
+      addr = cpu_resolve_addr(nes, operand, mode, false);
       if (cpu->p & V_MASK) {
         cpu->pc = addr;
         cpu->cyc++;
@@ -313,10 +321,10 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         cpu->a = operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        cpu->a = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        cpu->a = cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0xA0:  // LDY
     case 0xA4:
@@ -326,10 +334,10 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM) {
         cpu->y = operand;
       } else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        cpu->y = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        cpu->y = cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->y);
+      cpu_set_nz(nes, cpu->y);
       break;
     case 0x85:  // STA
     case 0x95:
@@ -338,25 +346,25 @@ void cpu_tick(struct cpu *cpu) {
     case 0x99:
     case 0x81:
     case 0x91:
-      addr = cpu_resolve_addr(cpu, operand, mode, true);
-      cpu_write8(cpu, addr, cpu->a);
+      addr = cpu_resolve_addr(nes, operand, mode, true);
+      cpu_write8(nes, addr, cpu->a);
       break;
     case 0x86:  // STX
     case 0x96:
     case 0x8E:
-      addr = cpu_resolve_addr(cpu, operand, mode, true);
-      cpu_write8(cpu, addr, cpu->x);
+      addr = cpu_resolve_addr(nes, operand, mode, true);
+      cpu_write8(nes, addr, cpu->x);
       break;
     case 0x84:  // STY
     case 0x94:
     case 0x8C:
-      addr = cpu_resolve_addr(cpu, operand, mode, true);
-      cpu_write8(cpu, addr, cpu->y);
+      addr = cpu_resolve_addr(nes, operand, mode, true);
+      cpu_write8(nes, addr, cpu->y);
       break;
     case 0x24:  // BIT: n and z flag behavior is slightly different so we can't
-    case 0x2C:  // use set_nz()
-      addr = cpu_resolve_addr(cpu, operand, mode, false);
-      result = cpu_read8(cpu, addr);
+    case 0x2C:  // use cpu_set_nz()
+      addr = cpu_resolve_addr(nes, operand, mode, false);
+      result = cpu_read8(nes, addr);
 
       // Set flags
       SET_BIT(cpu->p, Z_BIT, !(result & cpu->a));
@@ -364,18 +372,18 @@ void cpu_tick(struct cpu *cpu) {
       SET_BIT(cpu->p, N_BIT, (result & N_MASK) >> N_BIT);
       break;
     case 0x48:  // PHA
-      push8(cpu, cpu->a);
+      push8(nes, cpu->a);
       break;
     case 0x08:  // PHP
-      push8(cpu, cpu->p | B_MASK);
+      push8(nes, cpu->p | B_MASK);
       break;
     case 0x68:  // PLA
-      cpu->a = pop8(cpu);
+      cpu->a = pop8(nes);
       cpu->cyc++;
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0x28:  // PLP
-      result = pop8(cpu) | U_MASK;
+      result = pop8(nes) | U_MASK;
       cpu->cyc++;
       cpu->p = result & ~B_MASK;
       break;
@@ -390,10 +398,10 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         cpu->a &= operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        cpu->a &= cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        cpu->a &= cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0x09:  // ORA
     case 0x05:
@@ -406,10 +414,10 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         cpu->a |= operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        cpu->a |= cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        cpu->a |= cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0x49:  // EOR
     case 0x45:
@@ -422,10 +430,10 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         cpu->a ^= operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        cpu->a ^= cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        cpu->a ^= cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0xC9:  // CMP
     case 0xC5:
@@ -438,10 +446,10 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         result = operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        result = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        result = cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->a - result);
+      cpu_set_nz(nes, cpu->a - result);
 
       // Set carry bit
       SET_BIT(cpu->p, C_BIT, cpu->a >= result);
@@ -452,10 +460,10 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         result = operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        result = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        result = cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->x - result);
+      cpu_set_nz(nes, cpu->x - result);
 
       // Set carry bit
       SET_BIT(cpu->p, C_BIT, cpu->x >= result);
@@ -466,10 +474,10 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         result = operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        result = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        result = cpu_read8(nes, addr);
       }
-      set_nz(cpu, cpu->y - result);
+      cpu_set_nz(nes, cpu->y - result);
 
       // Set carry bit
       SET_BIT(cpu->p, C_BIT, cpu->y >= result);
@@ -485,8 +493,8 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         result = operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        result = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        result = cpu_read8(nes, addr);
       }
 
       // Overflow detection
@@ -502,7 +510,7 @@ void cpu_tick(struct cpu *cpu) {
       SET_BIT(cpu->p, C_BIT, cpu->a + result + old_carry > 0xFF);
 
       cpu->a += result + old_carry;
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0xE9:  // SBC
     case 0xE5:
@@ -516,8 +524,8 @@ void cpu_tick(struct cpu *cpu) {
       if (mode == IMM)
         result = ~operand;
       else {
-        addr = cpu_resolve_addr(cpu, operand, mode, false);
-        result = ~cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, false);
+        result = ~cpu_read8(nes, addr);
       }
 
       // Overflow detection
@@ -533,47 +541,47 @@ void cpu_tick(struct cpu *cpu) {
       SET_BIT(cpu->p, C_BIT, cpu->a + result + old_carry > 0xFFFF);
 
       cpu->a += result + old_carry;
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0xE8:  // INX
       cpu->x++;
       cpu->cyc++;
-      set_nz(cpu, cpu->x);
+      cpu_set_nz(nes, cpu->x);
       break;
     case 0xC8:  // INY
       cpu->y++;
       cpu->cyc++;
-      set_nz(cpu, cpu->y);
+      cpu_set_nz(nes, cpu->y);
       break;
     case 0xCA:  // DEX
       cpu->x--;
       cpu->cyc++;
-      set_nz(cpu, cpu->x);
+      cpu_set_nz(nes, cpu->x);
       break;
     case 0x88:  // DEY
       cpu->y--;
       cpu->cyc++;
-      set_nz(cpu, cpu->y);
+      cpu_set_nz(nes, cpu->y);
       break;
     case 0xAA:  // TAX
       cpu->x = cpu->a;
       cpu->cyc++;
-      set_nz(cpu, cpu->x);
+      cpu_set_nz(nes, cpu->x);
       break;
     case 0xA8:  // TAY
       cpu->y = cpu->a;
       cpu->cyc++;
-      set_nz(cpu, cpu->y);
+      cpu_set_nz(nes, cpu->y);
       break;
     case 0xBA:  // TSX
       cpu->x = cpu->sp;
       cpu->cyc++;
-      set_nz(cpu, cpu->x);
+      cpu_set_nz(nes, cpu->x);
       break;
     case 0x8A:  // TXA
       cpu->a = cpu->x;
       cpu->cyc++;
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0x9A:  // TXS
       cpu->sp = cpu->x;
@@ -582,12 +590,12 @@ void cpu_tick(struct cpu *cpu) {
     case 0x98:  // TYA
       cpu->a = cpu->y;
       cpu->cyc++;
-      set_nz(cpu, cpu->a);
+      cpu_set_nz(nes, cpu->a);
       break;
     case 0x40:  // RTI
-      result = pop8(cpu) | U_MASK;
+      result = pop8(nes) | U_MASK;
       cpu->p = result & ~B_MASK;
-      cpu->pc = pop16(cpu);
+      cpu->pc = pop16(nes);
       break;
     case 0x4A:  // LSR
     case 0x46:
@@ -598,19 +606,19 @@ void cpu_tick(struct cpu *cpu) {
         SET_BIT(cpu->p, C_BIT, cpu->a & C_MASK);
         cpu->a >>= 1;
         cpu->cyc++;
-        set_nz(cpu, cpu->a);
+        cpu_set_nz(nes, cpu->a);
       } else {
-        addr = cpu_resolve_addr(cpu, operand, mode, true);
-        result = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, true);
+        result = cpu_read8(nes, addr);
         SET_BIT(cpu->p, C_BIT, result & C_MASK);
 
         // This looks confusing, but actually RMW instructions on the 6502
         // have a "dummy" write, and this emulates that.
-        cpu_write8(cpu, addr, result);
+        cpu_write8(nes, addr, result);
         result >>= 1;
 
-        cpu_write8(cpu, addr, result);
-        set_nz(cpu, result);
+        cpu_write8(nes, addr, result);
+        cpu_set_nz(nes, result);
       }
       break;
     case 0x0A:  // ASL
@@ -622,17 +630,17 @@ void cpu_tick(struct cpu *cpu) {
         SET_BIT(cpu->p, C_BIT, (cpu->a & 0x80) >> 7);
         cpu->a <<= 1;
         cpu->cyc++;
-        set_nz(cpu, cpu->a);
+        cpu_set_nz(nes, cpu->a);
       } else {
-        addr = cpu_resolve_addr(cpu, operand, mode, true);
-        result = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, true);
+        result = cpu_read8(nes, addr);
         SET_BIT(cpu->p, C_BIT, (result & 0x80) >> 7);
 
-        cpu_write8(cpu, addr, result);
+        cpu_write8(nes, addr, result);
         result <<= 1;
 
-        cpu_write8(cpu, addr, result);
-        set_nz(cpu, result);
+        cpu_write8(nes, addr, result);
+        cpu_set_nz(nes, result);
       }
       break;
     case 0x6A:  // ROR
@@ -646,18 +654,18 @@ void cpu_tick(struct cpu *cpu) {
         cpu->a >>= 1;
         cpu->a |= old_carry << 7;
         cpu->cyc++;
-        set_nz(cpu, cpu->a);
+        cpu_set_nz(nes, cpu->a);
       } else {
-        addr = cpu_resolve_addr(cpu, operand, mode, true);
-        result = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, true);
+        result = cpu_read8(nes, addr);
         SET_BIT(cpu->p, C_BIT, result & C_MASK);
 
-        cpu_write8(cpu, addr, result);
+        cpu_write8(nes, addr, result);
         result >>= 1;
         result |= old_carry << 7;
 
-        cpu_write8(cpu, addr, result);
-        set_nz(cpu, result);
+        cpu_write8(nes, addr, result);
+        cpu_set_nz(nes, result);
       }
       break;
     case 0x2A:  // ROL
@@ -671,45 +679,45 @@ void cpu_tick(struct cpu *cpu) {
         cpu->a <<= 1;
         cpu->a |= old_carry;
         cpu->cyc++;
-        set_nz(cpu, cpu->a);
+        cpu_set_nz(nes, cpu->a);
       } else {
-        addr = cpu_resolve_addr(cpu, operand, mode, true);
-        result = cpu_read8(cpu, addr);
+        addr = cpu_resolve_addr(nes, operand, mode, true);
+        result = cpu_read8(nes, addr);
         SET_BIT(cpu->p, C_BIT, (result & 0x80) >> 7);
 
-        cpu_write8(cpu, addr, result);
+        cpu_write8(nes, addr, result);
         result <<= 1;
         result |= old_carry;
 
-        cpu_write8(cpu, addr, result);
-        set_nz(cpu, result);
+        cpu_write8(nes, addr, result);
+        cpu_set_nz(nes, result);
       }
       break;
     case 0xE6:  // INC
     case 0xF6:
     case 0xEE:
     case 0xFE:
-      addr = cpu_resolve_addr(cpu, operand, mode, true);
-      result = cpu_read8(cpu, addr);
+      addr = cpu_resolve_addr(nes, operand, mode, true);
+      result = cpu_read8(nes, addr);
 
-      cpu_write8(cpu, addr, result);
+      cpu_write8(nes, addr, result);
       result++;
 
-      set_nz(cpu, result);
-      cpu_write8(cpu, addr, result);
+      cpu_set_nz(nes, result);
+      cpu_write8(nes, addr, result);
       break;
     case 0xC6:  // DEC
     case 0xD6:
     case 0xCE:
     case 0xDE:
-      addr = cpu_resolve_addr(cpu, operand, mode, true);
-      result = cpu_read8(cpu, addr);
+      addr = cpu_resolve_addr(nes, operand, mode, true);
+      result = cpu_read8(nes, addr);
 
-      cpu_write8(cpu, addr, result);
+      cpu_write8(nes, addr, result);
       result--;
 
-      set_nz(cpu, result);
-      cpu_write8(cpu, addr, result);
+      cpu_set_nz(nes, result);
+      cpu_write8(nes, addr, result);
       break;
     default:
       printf("cpu_tick $%04X: unsupported op 0x%02X (%s)\n",
@@ -721,20 +729,22 @@ void cpu_tick(struct cpu *cpu) {
 // Sets the negative and zero flags based on the result of a computation
 // Can't set carry and overflow flag here (i think?) because they are set
 // differently depending on the instruction
-inline void set_nz(struct cpu *cpu, u8 result) {
-  SET_BIT(cpu->p, N_BIT, (result & 0x80) >> 7);
-  SET_BIT(cpu->p, Z_BIT, !result);
+inline void cpu_set_nz(struct nes *nes, u8 result) {
+  SET_BIT(nes->cpu->p, N_BIT, (result & 0x80) >> 7);
+  SET_BIT(nes->cpu->p, Z_BIT, !result);
 }
 
-void cpu_destroy(struct cpu *cpu) {
-  free(cpu->mem);
+void cpu_destroy(struct nes *nes) {
+//  free(nes->cpu->mem);
 }
 
-void dump_cpu(struct cpu *cpu, u8 opcode, u16 operand, addrmode mode) {
+void dump_cpu(struct nes *nes, u8 opcode, u16 operand, addrmode mode) {
   u8 num_operands, low, high;
   u16 addr;
   u64 ppu_cyc;
+  struct cpu *cpu;
 
+  cpu = nes->cpu;
   fprintf(log_f, "%04X  ", cpu->pc);
   num_operands = OPERAND_SIZES[mode];
   low = operand & 0x00FF;
@@ -761,21 +771,21 @@ void dump_cpu(struct cpu *cpu, u8 opcode, u16 operand, addrmode mode) {
         fprintf(log_f, " $%04X                       ", operand);
       else
         fprintf(log_f, " $%04X = %02X                  ", operand,
-                mem_read8(cpu->mem, operand));
+                mem_read8(nes, operand));
       break;
     case ABS_IND:
-      addr = resolve_addr(cpu, operand, mode);
+      addr = resolve_addr(nes, operand, mode);
       fprintf(log_f, " ($%04X) = %04X              ", operand, addr);
       break;
     case ABS_IDX_X:
     case ABS_IDX_Y:
-      addr = resolve_addr(cpu, operand, mode);
+      addr = resolve_addr(nes, operand, mode);
       fprintf(log_f, " $%04X,%s @ %04X = %02X         ", operand,
-              mode == ABS_IDX_X ? "X" : "Y", addr, mem_read8(cpu->mem, addr));
+              mode == ABS_IDX_X ? "X" : "Y", addr, mem_read8(nes, addr));
       break;
     case REL:
       // Add two because we haven't advanced the PC when this function is called
-      addr = resolve_addr(cpu, operand, mode) + 2;
+      addr = resolve_addr(nes, operand, mode) + 2;
       fprintf(log_f, " $%04X                       ", addr);
       break;
     case IMM:
@@ -783,25 +793,25 @@ void dump_cpu(struct cpu *cpu, u8 opcode, u16 operand, addrmode mode) {
       break;
     case ZP:
       fprintf(log_f, " $%02X = %02X                    ", operand,
-              mem_read8(cpu->mem, operand));
+              mem_read8(nes, operand));
       break;
     case ZP_IDX_X:
     case ZP_IDX_Y:
-      addr = resolve_addr(cpu, operand, mode);
+      addr = resolve_addr(nes, operand, mode);
       fprintf(log_f, " $%02X,%s @ %02X = %02X             ", operand,
-              mode == ZP_IDX_X ? "X" : "Y", addr, mem_read8(cpu->mem, addr));
+              mode == ZP_IDX_X ? "X" : "Y", addr, mem_read8(nes, addr));
       break;
     case ZP_IDX_IND:
-      addr = resolve_addr(cpu, operand, mode);
+      addr = resolve_addr(nes, operand, mode);
       fprintf(log_f, " ($%02X,X) @ %02X = %04X = %02X    ", operand,
-              (operand + cpu->x) & 0xFF, addr, mem_read8(cpu->mem, addr));
+              (operand + cpu->x) & 0xFF, addr, mem_read8(nes, addr));
       break;
     case ZP_IND_IDX_Y:
-      addr = resolve_addr(cpu, operand, mode);
-      low = mem_read8(cpu->mem, operand);
-      high = mem_read8(cpu->mem, (operand + 1) & 0xFF);
+      addr = resolve_addr(nes, operand, mode);
+      low = mem_read8(nes, operand);
+      high = mem_read8(nes, (operand + 1) & 0xFF);
       fprintf(log_f, " ($%02X),Y = %04X @ %04X = %02X  ", operand,
-              low | (high << 8), addr, mem_read8(cpu->mem, addr));
+              low | (high << 8), addr, mem_read8(nes, addr));
       break;
     case IMPL_ACCUM:
       // For some dumb reason, accumulator arithmetic instructions have "A" as

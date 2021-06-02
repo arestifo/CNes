@@ -2,6 +2,9 @@
 #define CNES_UTIL_H
 #include "nes.h"
 
+// Sets bit n of num to x. x must be 0 or 1, else the result is garbage
+#define SET_BIT(num, n, x) ((num) = (((num) & ~(1 << (n))) | ((x) << (n))))
+
 void   *nes_malloc(size_t sz);
 void   *nes_calloc(size_t count, size_t sz);
 FILE   *nes_fopen(char *fn, char *mode);

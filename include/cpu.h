@@ -25,8 +25,6 @@
 #define V_MASK 0x40
 #define N_MASK 0x80
 
-#define SET_BIT(num, n, x) ((num) = (((num) & ~(1 << (n))) | ((x) << (n))))
-
 #define NMI_VEC    0xFFFA
 #define RESET_VEC  0xFFFC
 #define IRQ_VEC    0xFFFE
@@ -50,7 +48,7 @@ struct cpu {
   u8  p;      // Status register
 
   u64 cyc;     // Cycles
-  u8  *mem;    // Pointer to main memory
+  u8  mem[CPU_MEM_SZ];    // Pointer to main memory
 };
 
 // Memory addressing modes
@@ -80,13 +78,12 @@ extern FILE *log_f;
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
 addrmode get_addrmode(u8 opcode);
-u16 resolve_addr(struct cpu *cpu, u16 addr, addrmode mode);
-void set_nz(struct cpu *cpu, u8 result);
-void cpu_init(struct cpu *cpu, struct nes *nes);
-void cpu_destroy(struct cpu *cpu);
-void cpu_tick(struct cpu *cpu);
+u16 resolve_addr(struct nes *nes, u16 addr, addrmode mode);
+void cpu_set_nz(struct nes *nes, u8 result);
+void cpu_init(struct nes *nes);
+void cpu_tick(struct nes *nes);
 
 // Debugging util functions
-void dump_cpu(struct cpu *cpu, u8 opcode, u16 operand, addrmode mode);
+void dump_cpu(struct nes *nes, u8 opcode, u16 operand, addrmode mode);
 
 #endif
