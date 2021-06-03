@@ -1,34 +1,30 @@
 #include "include/ppu.h"
 #include "include/util.h"
+#include "include/window.h"
 
 void ppu_init(struct nes *nes) {
-  struct ppu *ppu;
 
-  ppu = nes->ppu;
 }
 
+// Renders a single pixel at the current PPU position
 void ppu_tick(struct nes *nes) {
 
 }
 
 u8 ppu_read(struct nes *nes, u8 reg) {
-  u8 retval;
   struct ppu *ppu;
+  u8 retval;
 
   ppu = nes->ppu;
   switch (reg) {
     case 2:  // PPUSTATUS
-      retval = ppu->regs[PPUSTATUS];
-
       // Clear vblank bit every PPUSTATUS read
-      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS, 0);
-      break;
+      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
+      return ppu->regs[PPUSTATUS];
     case 4:  // OAMDATA
       // TODO
-      break;
     case 7:  // PPUDATA
       // TODO
-      break;
     default:
       printf("ppu_read: cannot read from ppu reg $%02d\n", reg);
       exit(EXIT_FAILURE);

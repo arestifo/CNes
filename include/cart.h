@@ -1,5 +1,6 @@
 #ifndef CNES_CART_H
 #define CNES_CART_H
+
 #include "nes.h"
 
 #define PRGROM_BLOCK_SZ 0x4000

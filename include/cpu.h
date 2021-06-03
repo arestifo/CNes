@@ -1,5 +1,6 @@
 #ifndef CNES_CPU_H
 #define CNES_CPU_H
+
 #include "nes.h"
 
 // Flag operations:
@@ -40,15 +41,19 @@
 
 // The NES uses a MOS Technology 6502 CPU with minimal modifications
 struct cpu {
-  u8  a;       // Accumulator register
-  u8  x;       // X register
-  u8  y;       // Y register
-  u16 pc;      // Program counter register
-  u8  sp;      // Stack pointer register
-  u8  p;      // Status register
+  u8 a;                  // Accumulator register
+  u8 x;                  // X register
+  u8 y;                  // Y register
+  u16 pc;                // Program counter register
+  u8 sp;                 // Stack pointer register
+  u8 p;                  // Status register
 
-  u64 cyc;     // Cycles
-  u8  mem[CPU_MEM_SZ];    // Pointer to main memory
+  u64 cyc;               // Cycles
+  u8 mem[CPU_MEM_SZ];    // Pointer to main memory
+
+  // Interrupt flags
+  bool nmi_pending;
+  bool irq_pending;
 };
 
 // Memory addressing modes
@@ -70,20 +75,25 @@ typedef enum addrmode {
 
   // Implied, accumulator; no additional operands
   IMPL_ACCUM
-} addrmode;
+} addrmode_t;
+
+typedef enum interrupt {
+  INTR_NMI, INTR_IRQ, INTR_BRK
+} interrupt_t;
 
 extern FILE *log_f;
 
 // Gets addressing mode from opcode.
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
-addrmode get_addrmode(u8 opcode);
-u16 resolve_addr(struct nes *nes, u16 addr, addrmode mode);
+addrmode_t get_addrmode(u8 opcode);
+u16 resolve_addr(struct nes *nes, u16 addr, addrmode_t mode);
 void cpu_set_nz(struct nes *nes, u8 result);
 void cpu_init(struct nes *nes);
+void cpu_interrupt(struct nes *nes, interrupt_t type);
 void cpu_tick(struct nes *nes);
 
 // Debugging util functions
-void dump_cpu(struct nes *nes, u8 opcode, u16 operand, addrmode mode);
+void dump_cpu(struct nes *nes, u8 opcode, u16 operand, addrmode_t mode);
 
 #endif

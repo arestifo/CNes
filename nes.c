@@ -6,10 +6,9 @@
 #include "include/window.h"
 
 void nes_init(struct nes *nes, char *cart_fn) {
-  nes->cpu = nes_malloc(sizeof *nes->cpu);
+  nes->cpu = nes_calloc(1, sizeof *nes->cpu);
   nes->ppu = nes_malloc(sizeof *nes->ppu);
   nes->cart = nes_malloc(sizeof *nes->cart);
-//  nes->window = nes_malloc(sizeof *nes->window);
 
   cart_init(nes->cart, cart_fn);
   cpu_init(nes);
@@ -23,5 +22,4 @@ void nes_destroy(struct nes *nes) {
   free(nes->cpu);
   free(nes->ppu);
   free(nes->cart);
-//  free(nes->window);
 }

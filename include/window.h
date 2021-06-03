@@ -1,9 +1,12 @@
 #ifndef CNES_WINDOW_H
 #define CNES_WINDOW_H
+
 #include "nes.h"
 
 #define WINDOW_W 256
 #define WINDOW_H 240
+
+#define TARGET_FPS 60
 
 struct window {
   SDL_Window *disp_window;

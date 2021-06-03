@@ -37,7 +37,8 @@ size_t nes_fread(void *ptr, size_t sz, size_t n, FILE *f) {
   size_t bytesread;
 
   if ((bytesread = fread(ptr, sz, n, f)) != n) {
-    printf("nes_fread: read size inconsistent, read=%zu n=%zu sz=%zu expected=%lu\n", bytesread, n, sz, n);
+    printf("nes_fread: read size inconsistent, read=%zu n=%zu sz=%zu expected=%lu\n", bytesread, n,
+           sz, n);
   }
 
   return bytesread;
@@ -107,7 +108,7 @@ char *opcode_tos(u8 opcode) {
     case 0x10:
       return "BPL";
     case 0x00:
-      return "BRK";
+      return "INTR_BRK";
     case 0x50:
       return "BVC";
     case 0x70:

@@ -2,15 +2,15 @@
 #include "include/ppu.h"
 #include "include/cpu.h"
 
-void mem_write8(struct nes *nes, u16 addr, u8 val) {
+void cpu_write8(struct nes *nes, u16 addr, u8 val) {
   if (addr >= 0x2000 && addr <= 0x3FFF) {
-    // TODO: PPU register writes
+    ppu_write(nes, addr % 8, val);
   } else {
     nes->cpu->mem[addr] = val;
   }
 }
 
-u8 mem_read8(struct nes *nes, u16 addr) {
+u8 cpu_read8(struct nes *nes, u16 addr) {
   if (addr <= 0x1FFF) {
     // 2KB internal ram
     return nes->cpu->mem[addr % 0x0800];
@@ -36,37 +36,6 @@ u8 mem_read8(struct nes *nes, u16 addr) {
   return 0;
 }
 
-void mem_write16(struct nes *nes, u16 addr, u16 val) {
-  u8 low, high;
-
-  low = val & 0x00FF;
-  high = (val & 0xFF00) >> 8;
-
-  mem_write8(nes, addr, low);
-  mem_write8(nes, addr + 1, high);
-}
-
-u16 mem_read16(struct nes *nes, u16 addr) {
-  u8 low, high;
-
-  low = mem_read8(nes, addr);
-  high = mem_read8(nes, addr + 1);
-
-  return low | (high << 8);
-}
-
-void cpu_write8(struct nes *nes, u16 addr, u8 val) {
-  nes->cpu->cyc++;
-
-  mem_write8(nes, addr, val);
-}
-
-u8 cpu_read8(struct nes *nes, u16 addr) {
-  nes->cpu->cyc++;
-
-  return mem_read8(nes, addr);
-}
-
 // Write 16-bit value to memory in little-endian format
 void cpu_write16(struct nes *nes, u16 addr, u16 val) {
   u8 low, high;
@@ -88,16 +57,12 @@ u16 cpu_read16(struct nes *nes, u16 addr) {
   return low | (high << 8);
 }
 
-void push8(struct nes *nes, u8 val) {
-  nes->cpu->cyc++;
-
+void cpu_push8(struct nes *nes, u8 val) {
   cpu_write8(nes, STACK_BASE + nes->cpu->sp--, val);
 }
 
-void push16(struct nes *nes, u16 val) {
+void cpu_push16(struct nes *nes, u16 val) {
   u8 low, high;
-
-  nes->cpu->cyc++;
 
   low = val & 0x00FF;
   high = (val & 0xFF00) >> 8;
@@ -106,16 +71,12 @@ void push16(struct nes *nes, u16 val) {
   cpu_write8(nes, STACK_BASE + nes->cpu->sp--, low);
 }
 
-u8 pop8(struct nes *nes) {
-  nes->cpu->cyc++;
-
+u8 cpu_pop8(struct nes *nes) {
   return cpu_read8(nes, STACK_BASE + ++nes->cpu->sp);
 }
 
-u16 pop16(struct nes *nes) {
+u16 cpu_pop16(struct nes *nes) {
   u8 low, high;
-
-  nes->cpu->cyc++;
 
   low = cpu_read8(nes, STACK_BASE + ++nes->cpu->sp);
   high = cpu_read8(nes, STACK_BASE + ++nes->cpu->sp);
