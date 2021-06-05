@@ -28,8 +28,15 @@ typedef enum ppureg {
 #define PPUSTATUS_OVERFLOW_BIT    5
 
 #define NUM_PPUREGS 8
+
+// Size of total PPU addressable memory
 #define PPU_MEM_SZ  0x4000
+
+// Size of OAM memory
 #define OAM_SZ      0x0100
+
+// Size of each nametable
+#define NT_SZ       0x0400
 
 // 262 scanlines per frame: 1 pre-render, 240 visible, 1 post-render, and 20 vblank lines.
 // Each scanlines takes 341 PPU cycles to complete, so each scanline "renders" 341 pixels:
@@ -45,9 +52,11 @@ typedef struct ppu {
 
   // PPU scanline positions
   u64 frameno;            // Current PPU frame
-  u32 x;                  // Current X position (dot within current scanline)
-  u32 y;                  // Current Y position (current dot)
   u16 vram_addr;          // Current VRAM address
+  u16 x;                  // Current X position (dot within current scanline)
+  u16 y;                  // Current Y position (current dot)
+  u8  scroll_x;           // Current scroll X position
+  u8  scroll_y;           // Current scroll Y position
   bool nmi_occurred;      // Whether the PPU is currently generating NMIs or not
 
   u64 ticks;              // Number of PPU cycles
@@ -63,7 +72,7 @@ u8   ppu_read(nes_t *nes, u16 addr);
 void ppu_write(nes_t *nes, u16 addr, u8 val);
 
 void ppu_init(nes_t *nes);
-void ppu_tick(nes_t *nes);
+void ppu_tick(nes_t *nes, window_t *wnd);
 void ppu_destroy(nes_t *nes);
 
 #endif

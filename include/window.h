@@ -20,8 +20,8 @@ typedef struct window {
   bool frame_ready;
 } window_t;
 
-void window_init(struct window *wnd);
-void window_update(struct window *wnd, nes_t *nes);
-void window_destroy(struct window *wnd);
+void window_init(window_t *wnd);
+void window_update(window_t *wnd, nes_t *nes);
+void window_destroy(window_t *wnd);
 
 #endif

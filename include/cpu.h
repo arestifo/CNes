@@ -26,9 +26,9 @@
 #define V_MASK 0x40
 #define N_MASK 0x80
 
-#define NMI_VEC    0xFFFA
-#define RESET_VEC  0xFFFC
-#define IRQ_VEC    0xFFFE
+#define VEC_NMI    0xFFFA
+#define VEC_RESET  0xFFFC
+#define VEC_IRQ    0xFFFE
 #define STACK_BASE 0x0100
 
 #define CPU_MEM_SZ 0x10000
@@ -90,7 +90,7 @@ addrmode_t get_addrmode(u8 opcode);
 u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode);
 void cpu_set_nz(nes_t *nes, u8 result);
 void cpu_init(nes_t *nes);
-void cpu_interrupt(nes_t *nes, interrupt_t type);
+//void cpu_interrupt(nes_t *nes, interrupt_t type);
 void cpu_tick(nes_t *nes);
 
 // Debugging util functions

@@ -11,7 +11,7 @@ static bool g_shutdown = false;
 
 int main(int argc, char **argv) {
   nes_t nes;
-  struct window window;
+  window_t window;
   SDL_Event event;
   u32 ticks, frame_time;
   f32 ticks_per_frame;
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
 
     // Delay for enough time to get our desired FPS
     frame_time = SDL_GetTicks() - ticks;
-    printf("frame_time: %dms (%.1f fps)\n", frame_time, 1000.0 / frame_time);
+//    printf("frame_time: %dms (%.1f fps)\n", frame_time, 1000.0 / frame_time);
     SDL_Delay(MAX(ticks_per_frame - frame_time, 0));
   }
 

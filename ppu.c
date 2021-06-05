@@ -2,6 +2,7 @@
 #include "include/util.h"
 #include "include/window.h"
 #include "include/cpu.h"
+#include "include/cart.h"
 
 void ppu_init(nes_t *nes) {
   ppu_t *ppu;
@@ -14,17 +15,17 @@ void ppu_init(nes_t *nes) {
   ppu->vram_addr = 0x0000;
 
   // Set up PPU address space
-  // Load CHR ROM into PPU $
+  // Load CHR ROM (pattern tables) into PPU $0000-$1FFF
+  // TODO: This only works for mapper 0! Add more mapper later
+  memcpy(ppu->mem, nes->cart->chr_rom, nes->cart->header.chrrom_n * CHRROM_BLOCK_SZ);
 }
 
 // Renders a single pixel at the current PPU position
 // Also controls timing and issues NMIs to the CPU whe
-void ppu_tick(nes_t *nes) {
+void ppu_tick(nes_t *nes, window_t *wnd) {
   ppu_t *ppu;
-  struct window *wnd;
 
   ppu = nes->ppu;
-  wnd = nes->window;
   if (ppu->y == 0) {
     // Pre-render scanline
     // Clear NMI flag on the second dot of the pre-render scanline
@@ -37,14 +38,17 @@ void ppu_tick(nes_t *nes) {
     // Visible scanlines
   } else if (ppu->y == 241) {
     // Post-render scanline
+    // All visible scanlines have been rendered, frame is ready to be displayed
+    wnd->frame_ready = true;
   } else if (ppu->y >= 242 && ppu->y <= 261) {
     // VBlank scanlines
-    // Issue NMI at the second dot (x=1) of VBlank period
-    if (ppu->x == 1) {
+    // Issue NMI at the second dot (x=1) of the first VBlank scanline
+    if (ppu->y == 242 && ppu->x == 1) {
       ppu->nmi_occurred = true;
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 1);
+
       if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_NMI_ENABLE_BIT))
-        cpu_interrupt(nes, INTR_NMI);
+        nes->cpu->nmi_pending = true;
     }
   }
 
@@ -52,7 +56,7 @@ void ppu_tick(nes_t *nes) {
   ppu->ticks++;
   ppu->x = ppu->ticks % DOTS_PER_SCANLINE;
   ppu->y = (ppu->ticks / DOTS_PER_SCANLINE) % NUM_SCANLINES;
-  printf("ppu_tick: x=%d y=%d cyc=%llu\n", ppu->x, ppu->y, ppu->ticks);
+//  printf("ppu_tick: x=%d y=%d cyc=%llu\n", ppu->x, ppu->y, ppu->ticks);
 }
 
 u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
@@ -85,8 +89,12 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
 }
 
 void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
+  // These variables check what "phase" of the write-twice registers (PPUADDR & PPUSCROLL)
+  // the PPU is in (which is why they are static -- we want persistent state)
   static bool ppuaddr_written = false;
+  static bool ppuscroll_written = false;
   ppu_t *ppu;
+  u8 vram_inc;
 
   ppu = nes->ppu;
   switch (reg) {
@@ -101,7 +109,25 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       ppu->regs[PPUCTRL] = val;
       break;
     case PPUMASK:
-      // TODO: Add
+      // TODO: Add color emphasizing support
+      break;
+    case PPUSCROLL:
+      if (ppuscroll_written)
+        ppu->scroll_y = val;
+      else
+        ppu->scroll_x = val;
+      ppuscroll_written ^= true;
+      break;
+    case PPUDATA:
+      vram_inc = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_VRAM_INC_BIT) ? 32 : 1;
+      ppu_write(nes, ppu->vram_addr, val);
+
+      ppu->vram_addr += vram_inc;
+      break;
+    case OAMADDR:
+      // TODO: Implement PPU OAMADDR and OAMDATA registers. Most games don't use them,
+      // TODO: so I'm not gonna bother right now
+      break;
     default:
       printf("ppu_reg_write: cannot write to ppu reg $%02d\n", reg);
       exit(EXIT_FAILURE);
@@ -115,7 +141,6 @@ u8 ppu_read(nes_t *nes, u16 addr) {
 void ppu_write(nes_t *nes, u16 addr, u8 val) {
   nes->ppu->mem[addr] = val;
 }
-
 
 void ppu_destroy(nes_t *nes) {
 

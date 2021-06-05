@@ -21,7 +21,7 @@ typedef struct nes {
   cpu_t *cpu;
   ppu_t *ppu;
   cart_t *cart;
-  window_t *window;
+//  window_t *window;
 } nes_t;
 
 void nes_init(nes_t *nes, char *cart_fn);

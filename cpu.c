@@ -27,7 +27,7 @@ void cpu_init(nes_t *nes) {
 
   // Set the program counter to the right place
 //  cpu->pc = 0xC000;  // TODO: REMOVE! This is just for nestest
-  cpu->pc = cpu_read16(nes, RESET_VEC);
+  cpu->pc = cpu_read16(nes, VEC_RESET);
 }
 
 u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
@@ -157,6 +157,36 @@ addrmode_t get_addrmode(u8 opcode) {
   return IMPL_ACCUM;
 }
 
+// TODO: If possible, add interrupt hijacking support
+// https://wiki.nesdev.com/w/index.php/CPU_interrupts
+static void cpu_interrupt(nes_t *nes, interrupt_t type) {
+  cpu_t *cpu;
+  u16 vec;
+
+  cpu = nes->cpu;
+  cpu_push16(nes, cpu->pc);
+  if (type == INTR_BRK) {
+    SET_BIT(cpu->p, B_BIT, 1);
+    vec = VEC_IRQ;
+  } else if (type == INTR_IRQ) {
+    SET_BIT(cpu->p, B_BIT, 0);
+    vec = VEC_IRQ;
+  } else if (type == INTR_NMI) {
+    SET_BIT(cpu->p, B_BIT, 0);
+    vec = VEC_NMI;
+  } else {
+    printf("cpu_interrupt: invalid interrupt type %d\n", type);
+    exit(EXIT_FAILURE);
+  }
+
+  // Push processor status and disable interrupts
+  cpu_push8(nes, cpu->p);
+  SET_BIT(cpu->p, I_BIT, 1);
+
+  // Jump to interrupt handler
+  cpu->pc = cpu_read16(nes, vec);
+}
+
 void cpu_tick(nes_t *nes) {
   // Get opcode at current PC
   u8 opcode, old_carry;
@@ -186,10 +216,14 @@ void cpu_tick(nes_t *nes) {
 #endif
 
   // Check for interrupts
-  if (cpu->irq_pending)
+  if (cpu->irq_pending) {
     cpu_interrupt(nes, INTR_IRQ);
-  if (cpu->nmi_pending)
+    cpu->irq_pending = false;
+  }
+  if (cpu->nmi_pending) {
     cpu_interrupt(nes, INTR_NMI);
+    cpu->nmi_pending = false;
+  }
 
   opcode = cpu_read8(nes, cpu->pc);
   mode = get_addrmode(opcode);
@@ -765,36 +799,6 @@ inline void cpu_set_nz(nes_t *nes, u8 result) {
   SET_BIT(nes->cpu->p, Z_BIT, !result);
 }
 
-// TODO: If possible, add interrupt hijacking support
-// https://wiki.nesdev.com/w/index.php/CPU_interrupts
-void cpu_interrupt(nes_t *nes, interrupt_t type) {
-  cpu_t *cpu;
-  u16 vec;
-
-  cpu = nes->cpu;
-  cpu_push16(nes, cpu->pc);
-  if (type == INTR_BRK) {
-    SET_BIT(cpu->p, B_BIT, 1);
-    vec = IRQ_VEC;
-  } else if (type == INTR_IRQ) {
-    SET_BIT(cpu->p, B_BIT, 0);
-    vec = IRQ_VEC;
-  } else if (type == INTR_NMI) {
-    SET_BIT(cpu->p, B_BIT, 0);
-    vec = NMI_VEC;
-  } else {
-    printf("cpu_interrupt: invalid interrupt type %d\n", type);
-    exit(EXIT_FAILURE);
-  }
-
-  // Push processor status and disable interrupts
-  cpu_push8(nes, cpu->p);
-  SET_BIT(cpu->p, I_BIT, 1);
-
-  // Jump to interrupt handler
-  cpu->pc = cpu_read16(nes, vec);
-}
-
 void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   u8 num_operands, low, high;
   u16 addr;
@@ -890,7 +894,16 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
 
   // Print registers
   fprintf(log_f,
-          "A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3u,%3u CYC:%llu\n",
+          "A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3u,%3u CYC:%llu",
           cpu->a, cpu->x, cpu->y, cpu->p, cpu->sp, nes->ppu->y,
           nes->ppu->x, cpu->cyc);
+
+  // Mark where interrupts occur
+  if (cpu->pc == cpu_read16(nes, VEC_NMI)) {
+    fprintf(log_f, " **** NMI occurred ****");
+  } else if (cpu->pc == cpu_read16(nes, VEC_IRQ)) {
+    fprintf(log_f, " **** IRQ occurred ****");
+  }
+
+  fprintf(log_f, "\n");
 }
