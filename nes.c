@@ -6,6 +6,7 @@
 #include "include/window.h"
 
 void nes_init(nes_t *nes, char *cart_fn) {
+  // TODO: Why do I use calloc here? The reason has been lost to time
   nes->cpu = nes_calloc(1, sizeof *nes->cpu);
   nes->ppu = nes_malloc(sizeof *nes->ppu);
   nes->cart = nes_malloc(sizeof *nes->cart);

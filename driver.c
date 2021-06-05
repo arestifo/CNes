@@ -68,7 +68,6 @@ int main(int argc, char **argv) {
 
     // Delay for enough time to get our desired FPS
     frame_time = SDL_GetTicks() - ticks;
-//    printf("frame_time: %dms (%.1f fps)\n", frame_time, 1000.0 / frame_time);
     SDL_Delay(MAX(ticks_per_frame - frame_time, 0));
   }
 

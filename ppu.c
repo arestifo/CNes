@@ -53,6 +53,7 @@ static void render_pixel(nes_t *nes, window_t *wnd) {
 //  final_px = pt_byte_lo | (pt_byte_hi << 8) ? 0xFFFFFFFF : 0;
   final_px = (pt_byte_lo & (1 << (cur_x % 8))) | (pt_byte_hi & (1 << (cur_x % 8))) ? 0xFFFFFFFF : 0;
   wnd->pixels[cur_y][cur_x] = final_px;
+//    wnd->pixels[cur_y][cur_x] = 0x000000FF;
 }
 
 // Renders a single pixel at the current PPU position
@@ -155,7 +156,7 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       ppu->regs[PPUCTRL] = val;
       break;
     case PPUMASK:
-      // TODO: Add color emphasizing support
+      // TODO: Add color emphasizing support and show/hide background support
       break;
     case PPUSCROLL:
       if (ppuscroll_written)
