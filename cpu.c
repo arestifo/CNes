@@ -2,11 +2,12 @@
 #include "include/mem.h"
 #include "include/util.h"
 #include "include/cart.h"
+#include "include/ppu.h"
 
 const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 
-void cpu_init(struct nes *nes) {
-  struct cpu *cpu;
+void cpu_init(nes_t *nes) {
+  cpu_t *cpu;
 
   // NES power up state
   cpu = nes->cpu;
@@ -29,9 +30,9 @@ void cpu_init(struct nes *nes) {
   cpu->pc = cpu_read16(nes, RESET_VEC);
 }
 
-u16 resolve_addr(struct nes *nes, u16 addr, addrmode_t mode) {
+u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
   u8 low, high;
-  struct cpu *cpu;
+  cpu_t *cpu;
 
   cpu = nes->cpu;
   switch (mode) {
@@ -73,16 +74,16 @@ u16 resolve_addr(struct nes *nes, u16 addr, addrmode_t mode) {
     case IMPL_ACCUM:
     case IMM:
     default:
-      printf("resolve_addr: requested addr for invalid addr mode %d\n", mode);
+      printf("resolve_addr: requested vram_addr for invalid vram_addr mode %d\n", mode);
       return 0;
   }
 }
 
 static u16
-cpu_resolve_addr(struct nes *nes, u16 addr, addrmode_t mode, bool is_write) {
+cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
   u8 low, high;
   u16 retval;
-  struct cpu *cpu;
+  cpu_t *cpu;
 
   cpu = nes->cpu;
   switch (mode) {
@@ -119,7 +120,7 @@ cpu_resolve_addr(struct nes *nes, u16 addr, addrmode_t mode, bool is_write) {
     case IMPL_ACCUM:
     case IMM:
     default:
-      printf("resolve_addr: requested addr for invalid addr mode\n");
+      printf("resolve_addr: requested vram_addr for invalid vram_addr mode\n");
       return 0;
   }
   return resolve_addr(nes, addr, mode);
@@ -127,6 +128,8 @@ cpu_resolve_addr(struct nes *nes, u16 addr, addrmode_t mode, bool is_write) {
 
 // Gets the addressing mode from an opcode. Based on the chart from:
 // https://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
+// I like this method vs. a simple lookup table because this loosely emulates how the 6502
+// internally decodes instructions.
 addrmode_t get_addrmode(u8 opcode) {
   u8 mode_i;
 
@@ -154,13 +157,13 @@ addrmode_t get_addrmode(u8 opcode) {
   return IMPL_ACCUM;
 }
 
-void cpu_tick(struct nes *nes) {
+void cpu_tick(nes_t *nes) {
   // Get opcode at current PC
   u8 opcode, old_carry;
   u16 operand, addr, result;
   addrmode_t mode;
   bool v_cond;
-  struct cpu *cpu;
+  cpu_t *cpu;
 
   // Output current CPU state for debugging
   // We have to re-do all instruction fetching here because we don't want to
@@ -757,15 +760,15 @@ void cpu_tick(struct nes *nes) {
 // Sets the negative and zero flags based on the result of a computation
 // Can't set carry and overflow flag here (i think?) because they are set
 // differently depending on the instruction
-inline void cpu_set_nz(struct nes *nes, u8 result) {
+inline void cpu_set_nz(nes_t *nes, u8 result) {
   SET_BIT(nes->cpu->p, N_BIT, (result & 0x80) >> 7);
   SET_BIT(nes->cpu->p, Z_BIT, !result);
 }
 
 // TODO: If possible, add interrupt hijacking support
 // https://wiki.nesdev.com/w/index.php/CPU_interrupts
-void cpu_interrupt(struct nes *nes, interrupt_t type) {
-  struct cpu *cpu;
+void cpu_interrupt(nes_t *nes, interrupt_t type) {
+  cpu_t *cpu;
   u16 vec;
 
   cpu = nes->cpu;
@@ -792,11 +795,11 @@ void cpu_interrupt(struct nes *nes, interrupt_t type) {
   cpu->pc = cpu_read16(nes, vec);
 }
 
-void dump_cpu(struct nes *nes, u8 opcode, u16 operand, addrmode_t mode) {
+void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   u8 num_operands, low, high;
   u16 addr;
   u64 ppu_cyc;
-  struct cpu *cpu;
+  cpu_t *cpu;
 
   cpu = nes->cpu;
   fprintf(log_f, "%04X  ", cpu->pc);
@@ -886,9 +889,8 @@ void dump_cpu(struct nes *nes, u8 opcode, u16 operand, addrmode_t mode) {
   }
 
   // Print registers
-  ppu_cyc = cpu->cyc * 3;
   fprintf(log_f,
-          "A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3llu,%3llu CYC:%llu\n",
-          cpu->a, cpu->x, cpu->y, cpu->p, cpu->sp, ppu_cyc / 341,
-          ppu_cyc % 341, cpu->cyc);
+          "A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3u,%3u CYC:%llu\n",
+          cpu->a, cpu->x, cpu->y, cpu->p, cpu->sp, nes->ppu->y,
+          nes->ppu->x, cpu->cyc);
 }

@@ -1,11 +1,11 @@
 #include "include/cart.h"
 #include "include/util.h"
 
-void cart_init(struct cart *cart, char *cart_fn) {
+void cart_init(cart_t *cart, char *cart_fn) {
   FILE *cart_f;
   size_t header_sz;
-  int i;
   bool found;
+  int i;
   const int NUM_MAPPERS = 1;
   const int SUPPORTED_MAPPERS[NUM_MAPPERS] = {0};
 
@@ -42,10 +42,19 @@ void cart_init(struct cart *cart, char *cart_fn) {
     fseek(cart_f, TRAINER_SZ, SEEK_CUR);
   }
 
-  // Read PRG ROM TODO: and CHR ROM
+  // TODO: Support CHR RAM
+  if (cart->header.chrrom_n == 0) {
+    printf("cart_init: CHR RAM is not implemented yet.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  // Read PRG ROM
   cart->prg_rom = nes_malloc(PRGROM_BLOCK_SZ * cart->header.prgrom_n);
   nes_fread(cart->prg_rom, PRGROM_BLOCK_SZ, cart->header.prgrom_n, cart_f);
 
+  // Read CHR ROM
+  cart->chr_rom = nes_malloc(CHRROM_BLOCK_SZ * cart->header.chrrom_n);
+  nes_fread(cart->chr_rom, CHRROM_BLOCK_SZ, cart->header.chrrom_n, cart_f);
 #ifdef DEBUG
   printf("Loaded cart prgrom=16K*%d, chrrom=8K*%d, mapper=%d, trainer=%s\n",
          cart->header.prgrom_n, cart->header.chrrom_n, cart->mapper,
@@ -55,12 +64,13 @@ void cart_init(struct cart *cart, char *cart_fn) {
   cart->cart_f = cart_f;
 }
 
-void cart_destroy(struct cart *cart) {
+void cart_destroy(cart_t *cart) {
   free(cart->prg_rom);
+  free(cart->chr_rom);
   nes_fclose(cart->cart_f);
 }
 
-u8 get_mapper(struct cart *cart) {
+u8 get_mapper(cart_t *cart) {
   u8 low, high;
 
   low = (cart->header.flags6 & 0xF0) >> 4;

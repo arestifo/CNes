@@ -3,42 +3,67 @@
 
 #include "nes.h"
 
+// TODO: Add docs to PPU registers if I get around to it
 typedef enum ppureg {
-  PPUCTRL, PPUMASK, PPUSTATUS, OAMADDR, OAMDATA, PPUSCROLL, PPUADDR, PPUDATA
+  PPUCTRL,    // $2000: PPU control register (write)
+  PPUMASK,    // $2001: PPU mask register (write)
+  PPUSTATUS,  // $2002: PPU status register (read)
+  OAMADDR,    // $2003: OAM address register (write)
+  OAMDATA,    // $2004: OAM data register (read, write)
+  PPUSCROLL,  // $2005: PPU scroll position register (write twice)
+  PPUADDR,    // $2006: PPU VRAM address register (write twice)
+  PPUDATA     // $2007: PPU VRAM data register (read, write)
 } ppureg_t;
 
-#define PPUSTATUS_VBLANK_BIT   7
-#define PPUSTATUS_ZEROHIT_BIT  6
-#define PPUSTATUS_OVERFLOW_BIT 5
+#define PPUCTRL_VRAM_INC_BIT      2
+#define PPUCTRL_NMI_ENABLE_BIT    7
+
+#define PPUMASK_SHOW_BGR_LEFT_BIT 1
+#define PPUMASK_SHOW_SPR_LEFT_BIT 2
+#define PPUMASK_SHOW_BGR_BIT      3
+#define PPUMASK_SHOW_SPR_BIT      4
+
+#define PPUSTATUS_VBLANK_BIT      7
+#define PPUSTATUS_ZEROHIT_BIT     6
+#define PPUSTATUS_OVERFLOW_BIT    5
 
 #define NUM_PPUREGS 8
-#define PPU_MEM_SZ 0x4000
-#define OAM_SZ     0x0100
+#define PPU_MEM_SZ  0x4000
+#define OAM_SZ      0x0100
 
 // 262 scanlines per frame: 1 pre-render, 240 visible, 1 post-render, and 20 vblank lines.
 // Each scanlines takes 341 PPU cycles to complete, so each scanline "renders" 341 pixels:
-// 1 idle pre-render, 256 visible pixel,
-#define NUM_SCANLINES 262
-#define SCANLINE_CYC  341
+// 1 idle pre-render, 256 visible pixels,
+#define NUM_SCANLINES     262
+#define DOTS_PER_SCANLINE 341
 
-struct ppu {
+typedef struct ppu {
+  // PPU memory
   u8 regs[NUM_PPUREGS];   // PPU internal registers
   u8 mem[PPU_MEM_SZ];     // PPU memory
   u8 oam[OAM_SZ];         // PPU Object Attribute Memory
 
-  u64 cyc;                // PPU cycles TODO: maybe don't need b/c ppu.x & ppu.y
-  u32 x;                  // Current X position (position within current scanline)
-  u32 y;                  // Current Y position (current scanline)
-};
+  // PPU scanline positions
+  u64 frameno;            // Current PPU frame
+  u32 x;                  // Current X position (dot within current scanline)
+  u32 y;                  // Current Y position (current dot)
+  u16 vram_addr;          // Current VRAM address
+  bool nmi_occurred;      // Whether the PPU is currently generating NMIs or not
+
+  u64 ticks;              // Number of PPU cycles
+} ppu_t;
 
 // PPU register access
-// reg is an int between 0 and 7 that represents the last digit of the PPU
-// register being accessed
-u8   ppu_read(struct nes *nes, u8 reg);
-void ppu_write(struct nes *nes, u8 reg, u8 val);
+// These functions can be thought of as an interface between the CPU and PPU
+u8   ppu_reg_read(nes_t *nes, ppureg_t reg);
+void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val);
 
-void ppu_init(struct nes *nes);
-void ppu_tick(struct nes *nes);
-void ppu_destroy(struct nes *nes);
+// Internal PPU read functions. Should only be called by internal PPU functions
+u8   ppu_read(nes_t *nes, u16 addr);
+void ppu_write(nes_t *nes, u16 addr, u8 val);
+
+void ppu_init(nes_t *nes);
+void ppu_tick(nes_t *nes);
+void ppu_destroy(nes_t *nes);
 
 #endif

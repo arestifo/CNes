@@ -19,14 +19,14 @@ void window_init(struct window *wnd) {
     printf("window_init: CreateRGBSurfaceFrom() failed: %s\n", SDL_GetError());
 }
 
-void window_update(struct window *wnd, struct nes *nes) {
+void window_update(struct window *wnd, nes_t *nes) {
   while (!wnd->frame_ready) {
     cpu_tick(nes);
 
     // 3 PPU ticks per CPU cycle
-    ppu_tick(nes->ppu);
-    ppu_tick(nes->ppu);
-    ppu_tick(nes->ppu);
+    while ((nes->ppu->ticks != nes->cpu->cyc * 3)/* || !wnd->frame_ready */) {
+      ppu_tick(nes);
+    }
   }
 
   // Update the window surface and show it on the screen

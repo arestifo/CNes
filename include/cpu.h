@@ -40,7 +40,7 @@
 #define PAGE_CROSSED(a, b) (((a) & 0x0100) != ((b) & 0x0100))
 
 // The NES uses a MOS Technology 6502 CPU with minimal modifications
-struct cpu {
+typedef struct cpu {
   u8 a;                  // Accumulator register
   u8 x;                  // X register
   u8 y;                  // Y register
@@ -54,7 +54,7 @@ struct cpu {
   // Interrupt flags
   bool nmi_pending;
   bool irq_pending;
-};
+} cpu_t;
 
 // Memory addressing modes
 typedef enum addrmode {
@@ -87,13 +87,13 @@ extern FILE *log_f;
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
 addrmode_t get_addrmode(u8 opcode);
-u16 resolve_addr(struct nes *nes, u16 addr, addrmode_t mode);
-void cpu_set_nz(struct nes *nes, u8 result);
-void cpu_init(struct nes *nes);
-void cpu_interrupt(struct nes *nes, interrupt_t type);
-void cpu_tick(struct nes *nes);
+u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode);
+void cpu_set_nz(nes_t *nes, u8 result);
+void cpu_init(nes_t *nes);
+void cpu_interrupt(nes_t *nes, interrupt_t type);
+void cpu_tick(nes_t *nes);
 
 // Debugging util functions
-void dump_cpu(struct nes *nes, u8 opcode, u16 operand, addrmode_t mode);
+void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode);
 
 #endif

@@ -9,7 +9,7 @@
 
 // iNES file format information from NESdev wiki
 // https://wiki.nesdev.com/w/index.php/INES
-struct cart {
+typedef struct cart {
   struct {
     u8 magic[4];   // iNES header, should be exactly "NES\x1a"
     u8 prgrom_n;   // Number of 16K PRG ROMs
@@ -24,11 +24,12 @@ struct cart {
 
   // TODO: Maybe clean this stuff up in the future
   u8 mapper;       // Mapper number this cart uses
-  u8 *prg_rom;     // PRG ROM, the meat of the ROM
+  u8 *prg_rom;     // PRG ROM
+  u8 *chr_rom;     // CHR ROM
   FILE *cart_f;    // FILE pointer for cart file
-};
+} cart_t;
 
-void cart_init(struct cart *cart, char *cart_fn);
-void cart_destroy(struct cart *cart);
-u8 get_mapper(struct cart *cart);
+void cart_init(cart_t *cart, char *cart_fn);
+void cart_destroy(cart_t *cart);
+u8 get_mapper(cart_t *cart);
 #endif  // CNES_CART_H

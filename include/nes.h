@@ -12,13 +12,18 @@
 
 #define LOG_OUTPUT
 
-struct nes {
-  struct cpu *cpu;
-  struct ppu *ppu;
-  struct cart *cart;
-  struct window *window;
-};
+typedef struct cpu cpu_t;
+typedef struct ppu ppu_t;
+typedef struct cart cart_t;
+typedef struct window window_t;
 
-void nes_init(struct nes *nes, char *cart_fn);
-void nes_destroy(struct nes *nes);
+typedef struct nes {
+  cpu_t *cpu;
+  ppu_t *ppu;
+  cart_t *cart;
+  window_t *window;
+} nes_t;
+
+void nes_init(nes_t *nes, char *cart_fn);
+void nes_destroy(nes_t *nes);
 #endif

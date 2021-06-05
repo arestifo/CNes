@@ -10,7 +10,7 @@ FILE *log_f;
 static bool g_shutdown = false;
 
 int main(int argc, char **argv) {
-  struct nes nes;
+  nes_t nes;
   struct window window;
   SDL_Event event;
   u32 ticks, frame_time;

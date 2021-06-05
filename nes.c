@@ -5,7 +5,7 @@
 #include "include/cart.h"
 #include "include/window.h"
 
-void nes_init(struct nes *nes, char *cart_fn) {
+void nes_init(nes_t *nes, char *cart_fn) {
   nes->cpu = nes_calloc(1, sizeof *nes->cpu);
   nes->ppu = nes_malloc(sizeof *nes->ppu);
   nes->cart = nes_malloc(sizeof *nes->cart);
@@ -15,7 +15,7 @@ void nes_init(struct nes *nes, char *cart_fn) {
   ppu_init(nes);
 }
 
-void nes_destroy(struct nes *nes) {
+void nes_destroy(nes_t *nes) {
   ppu_destroy(nes);
   cart_destroy(nes->cart);
 
