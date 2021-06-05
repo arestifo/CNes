@@ -58,11 +58,11 @@ int main(int argc, char **argv) {
         case SDL_QUIT:
           g_shutdown = true;
           break;
-        case SDL_WINDOWEVENT:
-          if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-            // TODO: Handle resizing
-          }
-          break;
+//        case SDL_WINDOWEVENT:
+//          if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+//            // TODO: Handle resizing
+//          }
+//          break;
       }
     }
 

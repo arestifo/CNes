@@ -16,6 +16,7 @@ typedef enum ppureg {
 } ppureg_t;
 
 #define PPUCTRL_VRAM_INC_BIT      2
+#define PPUCTRL_BGR_PT_BASE_BIT   4
 #define PPUCTRL_NMI_ENABLE_BIT    7
 
 #define PPUMASK_SHOW_BGR_LEFT_BIT 1

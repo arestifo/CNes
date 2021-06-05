@@ -10,6 +10,8 @@ void ppu_init(nes_t *nes) {
   ppu = nes->ppu;
   ppu->x = 0;
   ppu->y = 0;
+  ppu->scroll_x = 0;
+  ppu->scroll_y = 0;
   ppu->ticks = 0;
   ppu->frameno = 0;
   ppu->vram_addr = 0x0000;
@@ -20,9 +22,44 @@ void ppu_init(nes_t *nes) {
   memcpy(ppu->mem, nes->cart->chr_rom, nes->cart->header.chrrom_n * CHRROM_BLOCK_SZ);
 }
 
+static void render_pixel(nes_t *nes, window_t *wnd) {
+  // Rendering a pixel consists of rendering both background and sprites
+  // TODO: Render sprites
+  ppu_t *ppu;
+  u32 cur_x, cur_y, final_px;
+  u16 nt_base, nt_idx, bgr_pt_base, pt_byte_idx;
+  u8 nt_byte, pt_byte_lo, pt_byte_hi;
+
+  ppu = nes->ppu;
+  cur_x = ppu->x - 1;
+  cur_y = ppu->y - 1;
+
+  // Background rendering
+  // Get the current nametable byte
+  // Nametables are 32x30 tiles, so we have to find the right tile index
+  // TODO: Add mirroring support
+  nt_base = 0x2000 + 0x0400 * (ppu->regs[PPUCTRL] & 3);
+  nt_idx = ((cur_y >> 3) * 32) + (cur_x >> 3);
+  nt_byte = ppu_read(nes, nt_base + nt_idx);
+
+  // nt_byte is a tile index for the background pattern table
+  bgr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
+
+  pt_byte_idx = bgr_pt_base + (nt_byte * 16) + cur_y % 8;
+  pt_byte_lo = ppu_read(nes, pt_byte_idx);
+  pt_byte_hi = ppu_read(nes, pt_byte_idx + 8);
+
+  // TODO: Add colors
+//  final_px = pt_byte_lo | (pt_byte_hi << 8) ? 0xFFFFFFFF : 0;
+  final_px = (pt_byte_lo & (1 << (cur_x % 8))) | (pt_byte_hi & (1 << (cur_x % 8))) ? 0xFFFFFFFF : 0;
+  wnd->pixels[cur_y][cur_x] = final_px;
+}
+
 // Renders a single pixel at the current PPU position
 // Also controls timing and issues NMIs to the CPU whe
 void ppu_tick(nes_t *nes, window_t *wnd) {
+  // TODO: Even and odd frames have slightly different behavior with idle cycles
+  static bool even_frame = true;
   ppu_t *ppu;
 
   ppu = nes->ppu;
@@ -30,12 +67,18 @@ void ppu_tick(nes_t *nes, window_t *wnd) {
     // Pre-render scanline
     // Clear NMI flag on the second dot of the pre-render scanline
     if (ppu->x == 1) {
+      ppu->frameno++;
       ppu->nmi_occurred = false;
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
     }
 
   } else if (ppu->y >= 1 && ppu->y <= 240) {
     // Visible scanlines
+    // Cycle 0 on all visible scanlines is an idle cycle
+    if (ppu->x >= 1 && ppu->x <= 256) {
+      // Render a visible pixel to the framebuffer
+      render_pixel(nes, wnd);
+    }
   } else if (ppu->y == 241) {
     // Post-render scanline
     // All visible scanlines have been rendered, frame is ready to be displayed
@@ -101,6 +144,9 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
     case PPUADDR:
       // The first PPUADDR write is the high byte of VRAM to be accessed, and the second byte
       // is the low byte
+      // Clear the vram address if we're writing a new one in
+      if (!ppuaddr_written)
+        ppu->vram_addr = 0x0000;
       ppu->vram_addr |= ppuaddr_written ? val : (val << 8);
       ppuaddr_written ^= true;  // Toggle ppuaddr_written
       break;

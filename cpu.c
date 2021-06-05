@@ -899,9 +899,9 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
           nes->ppu->x, cpu->cyc);
 
   // Mark where interrupts occur
-  if (cpu->pc == cpu_read16(nes, VEC_NMI)) {
+  if (cpu->nmi_pending) {
     fprintf(log_f, " **** NMI occurred ****");
-  } else if (cpu->pc == cpu_read16(nes, VEC_IRQ)) {
+  } else if (cpu->irq_pending) {
     fprintf(log_f, " **** IRQ occurred ****");
   }
 
