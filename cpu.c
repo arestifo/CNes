@@ -188,15 +188,12 @@ static void cpu_interrupt(nes_t *nes, interrupt_t type) {
 
 // Performs OAM DMA (with cycle counting). Uploads a page of memory from $xx00 to $xxFF where xx
 // is the PPU OAM address (ppu->regs[OAMADDR])
-void cpu_oam_dma(nes_t *nes, u8 cpu_base_addr) {
-  u16 oam_idx;  // To check for overflows
-  bool odd_cycle;
-
+void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
   cpu_t *cpu = nes->cpu;
   ppu_t *ppu = nes->ppu;
 
   // Copy page of memory to PPU OAM (+1 cycle to wait for writes to finish)
-  odd_cycle = cpu->cyc % 2 != 0;
+  bool odd_cycle = cpu->cyc % 2 != 0;
 
   // Even though we store OAM as a list of sprite_t's, this approach requires copying bytes directly
   // So cast to a u8 pointer instead of a sprite_t pointer

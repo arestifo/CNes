@@ -57,27 +57,29 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
   // Get the current nametable byte
   // Nametables are 32x30 tiles, so we have to find the right tile index
   // TODO: Add mirroring support
+  u8 x_tile_idx = cur_x % 8;
+  u8 y_tile_idx = cur_y % 8;
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
   if (show_bgr) {
     u16 nt_base = 0x2000 + 0x0400 * (ppu->regs[PPUCTRL] & 3);
-    u16 tile_idx = ((cur_y / 8) * 32) + (cur_x / 8);
+    u16 tile_idx = ((cur_y / 8) << 5) + (cur_x / 8);
     u8 bgr_tile = ppu_read(nes, nt_base + tile_idx);
 
     // bgr_tile is a tile index for the background pattern table
     u16 bgr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
 
     // Fetch the two pattern table bytes from the index we got from the nametables
-    u16 bg_ptable_idx = bgr_pt_base + (bgr_tile * 16) + cur_y % 8;
+    u16 bg_ptable_idx = bgr_pt_base + (bgr_tile << 4) + y_tile_idx;
     u8 bg_color_lo = ppu_read(nes, bg_ptable_idx);
     u8 bg_color_hi = ppu_read(nes, bg_ptable_idx + 8);
-    u8 bg_pal_idx_lo = !!(bg_color_lo & (0x80 >> (cur_x % 8))) |
-                       !!(bg_color_hi & (0x80 >> (cur_x % 8))) << 1;
+    u8 bg_pal_idx_lo = !!(bg_color_lo & (0x80 >> x_tile_idx)) |
+                       !!(bg_color_hi & (0x80 >> x_tile_idx)) << 1;
 
     // ***** Attribute table fetch *****
     u16 attr_base = nt_base + 0x3C0;
 
     // Attribute table bytes consist of four tiles with two bits of color information each
-    u8 attr_idx = attr_base + (8 * (cur_y / 32)) + (cur_x / 32);
+    u16 attr_idx = attr_base + (8 * (cur_y / 32)) + (cur_x / 32);
     u8 attr_byte = ppu_read(nes, attr_idx);
 
     // Get the "quadrant" of the attribute byte the current PPU position is at
@@ -100,29 +102,26 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
   bool show_spr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
   if (show_spr) {
     s8 active_spr_i = -1;
-    for (int i = SEC_OAM_NUM_SPR; i > 0; i--) {
-//    for (int i = 0; i < SEC_OAM_NUM_SPR; i++) {
+    for (int i = 0; i < SEC_OAM_NUM_SPR; i++) {
       sprite_t cur_spr = ppu->sec_oam[i];
       if (cur_spr.tile_idx) {
-        if (cur_x >= cur_spr.x_pos && cur_x <= cur_spr.x_pos + 8) {
+        if (cur_x >= cur_spr.x_pos && cur_x < cur_spr.x_pos + 8) {
           active_spr_i = i;
+          break;
         }
       }
     }
-
-    // TODO: 8x16 sprites
-    if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT))
-      printf("render_pixel: WARNING: 8x16 not implemented yet");
 
     if (active_spr_i >= 0) {
       sprite_t active_spr = ppu->sec_oam[active_spr_i];
 
       u16 spr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
-      u16 spr_ptable_idx = spr_pt_base + (active_spr.tile_idx * 16) + cur_y % 8;
+      u16 spr_ptable_idx = spr_pt_base + (active_spr.tile_idx << 4) + y_tile_idx;
       u8 spr_color_lo = ppu_read(nes, spr_ptable_idx);
       u8 spr_color_hi = ppu_read(nes, spr_ptable_idx + 8);
-      u8 spr_pal_idx_lo = !!(spr_color_lo & (0x80 >> (cur_x % 8))) |
-          !!(spr_color_hi & (0x80 >> (cur_x % 8))) << 1;
+      u8 spr_pal_idx_lo = !!(spr_color_lo & (0x80 >> x_tile_idx)) |
+          !!(spr_color_hi & (0x80 >> x_tile_idx)) << 1;
+
       u8 spr_pal_idx_hi = active_spr.attr & 3;
       u8 spr_pal_idx = spr_pal_idx_lo | (spr_pal_idx_hi << 2) | 0x10;
 
@@ -142,10 +141,8 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
     final_px = ppu->palette[uni_bgr_color];
   else if (bgr_color && !spr_color)
     final_px = ppu->palette[bgr_color];
-  else if (!bgr_color)
-    final_px = ppu->palette[spr_color];
   else
-    final_px = spr_has_priority ? spr_color : bgr_color;
+    final_px = spr_has_priority ? ppu->palette[spr_color] : ppu->palette[bgr_color];
 
   wnd->pixels[cur_y][cur_x] = final_px;
 }
@@ -168,16 +165,15 @@ static void ppu_fill_sec_oam(nes_t *nes) {
 
     // Is the sprite in range, and does it already exist in the secondary OAM?
     if (cur_spr.tile_idx) {
-      if (cur_y >= cur_spr.y_pos && cur_y <= cur_spr.y_pos + HEIGHT_OFFSET) {
-        ppu->sec_oam[sec_oam_i] = cur_spr;
-        sec_oam_i++;
+      if (cur_y >= cur_spr.y_pos && cur_y < cur_spr.y_pos + HEIGHT_OFFSET) {
+        ppu->sec_oam[sec_oam_i++] = cur_spr;
       }
     }
   }
 }
 
 // Renders a single pixel at the current PPU position
-// Also controls timing and issues NMIs to the CPU whe
+// Also controls timing and issues NMIs to the CPU on VBlank
 void ppu_tick(nes_t *nes, window_t *wnd) {
   // TODO: Even and odd frames have slightly different behavior with idle cycles
   ppu_t *ppu = nes->ppu;

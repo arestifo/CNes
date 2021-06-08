@@ -43,10 +43,10 @@ void cart_init(cart_t *cart, char *cart_fn) {
   }
 
   // TODO: Support CHR RAM
-  if (cart->header.chrrom_n == 0) {
-    printf("cart_init: CHR RAM is not implemented yet.\n");
-    exit(EXIT_FAILURE);
-  }
+//  if (cart->header.chrrom_n == 0) {
+//    printf("cart_init: CHR RAM is not implemented yet.\n");
+//    exit(EXIT_FAILURE);
+//  }
 
   // Read PRG ROM
   cart->prg_rom = nes_malloc(PRGROM_BLOCK_SZ * cart->header.prgrom_n);
@@ -55,11 +55,10 @@ void cart_init(cart_t *cart, char *cart_fn) {
   // Read CHR ROM
   cart->chr_rom = nes_malloc(CHRROM_BLOCK_SZ * cart->header.chrrom_n);
   nes_fread(cart->chr_rom, CHRROM_BLOCK_SZ, cart->header.chrrom_n, cart_f);
-#ifdef DEBUG
+
   printf("Loaded cart prgrom=16K*%d, chrrom=8K*%d, mapper=%d, trainer=%s\n",
          cart->header.prgrom_n, cart->header.chrrom_n, cart->mapper,
          cart->header.flags6 & 0x04 ? "yes" : "no");
-#endif
 
   cart->cart_f = cart_f;
 }

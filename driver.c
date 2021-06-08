@@ -3,12 +3,51 @@
 #include "include/cpu.h"
 #include "include/ppu.h"
 #include "include/window.h"
-#include "include/mem.h"
 
 // Entry point of CNES
 // Initializes everything and begins ROM execution
 FILE *log_f;
 static bool g_shutdown = false;
+
+static void keyboard_input(nes_t *nes, SDL_Keycode sc, bool keydown) {
+//  assert(keydown == 0 || keydown == 1);
+  u8 n;
+  switch (sc) {
+    case SDLK_l:  // L = button A
+      n = 0;
+      break;
+    case SDLK_k:  // K = button B
+      n = 1;
+      break;
+    case SDLK_g:  // G = select
+      n = 2;
+      break;
+    case SDLK_h:  // H = start
+      n = 3;
+      break;
+    case SDLK_w:  // W = up
+      n = 4;
+      break;
+    case SDLK_s:  // S = down
+      n = 5;
+      break;
+    case SDLK_a:  // A = left
+      n = 6;
+      break;
+    case SDLK_d:  // D = right
+      n = 7;
+      break;
+    default:
+      printf("keyboard_input: invalid input on key%s=%d\n", keydown ? "down" : "up", sc);
+      break;
+  }
+
+  // Buffer input
+  if (keydown)
+    SET_BIT(nes->ctrl1_sr_buf, n, 1);
+  else
+    SET_BIT(nes->ctrl1_sr_buf, n, 0);
+}
 
 int main(int argc, char **argv) {
   nes_t nes;
@@ -20,7 +59,6 @@ int main(int argc, char **argv) {
   int i = 0;
 
   printf("cnes by Alex Restifo starting\n");
-//  log_fn = "/dev/null";
   log_fn = "../logs/cnes.log";
 
   // Init SDL
@@ -55,6 +93,12 @@ int main(int argc, char **argv) {
         case SDL_QUIT:
           g_shutdown = true;
           break;
+        case SDL_KEYDOWN:
+          keyboard_input(&nes, event.key.keysym.sym, true);
+          break;
+        case SDL_KEYUP:
+          keyboard_input(&nes, event.key.keysym.sym, false);
+          break;
       }
     }
 
@@ -63,7 +107,8 @@ int main(int argc, char **argv) {
 
     // Delay for enough time to get our desired FPS
     frame_time = SDL_GetTicks() - ticks;
-    SDL_Delay(MAX(ticks_per_frame - frame_time, 0));
+//    printf("main: frametime=%d (%.2f fps)\n", frame_time, 1000.0 / frame_time);
+//    SDL_Delay(MAX(ticks_per_frame - frame_time, 0));
   }
 
   // Clean up

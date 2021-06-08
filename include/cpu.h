@@ -95,7 +95,7 @@ u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode);
 void cpu_set_nz(nes_t *nes, u8 result);
 void cpu_init(nes_t *nes);
 void cpu_tick(nes_t *nes);
-void cpu_oam_dma(nes_t *nes, u8 cpu_base_addr);
+void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr);
 
 // Debugging util functions
 void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode);

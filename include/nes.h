@@ -11,7 +11,7 @@
 #include "SDL.h"
 #include "types.h"
 
-#define LOG_OUTPUT
+//#define LOG_OUTPUT
 
 typedef struct cpu cpu_t;
 typedef struct ppu ppu_t;
@@ -24,12 +24,11 @@ typedef struct nes {
   cart_t *cart;
 
   // Controller information
-//  bool update_controllers;
+  bool controllers_polling;
   u8 ctrl1_sr;
+  u8 ctrl1_sr_buf;
 } nes_t;
 
 void nes_init(nes_t *nes, char *cart_fn);
 void nes_destroy(nes_t *nes);
-
-void controller_update(nes_t *nes);
 #endif
