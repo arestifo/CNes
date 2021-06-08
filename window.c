@@ -12,9 +12,6 @@ void window_init(window_t *wnd) {
 
   // Create RGB pixel_surface from PPU rendered pixel_surface
   wnd->window_surface = SDL_GetWindowSurface(wnd->disp_window);
-//  wnd->pixel_surface = SDL_CreateRGBSurfaceFrom(wnd->pixels, WINDOW_W, WINDOW_H,
-//                                                24, 3 * WINDOW_W, 0x00FF0000,
-//                                                0x0000FF00, 0x000000FF, 0);
   wnd->pixel_surface = SDL_CreateRGBSurfaceFrom(wnd->pixels, WINDOW_W, WINDOW_H,
                                                 32, 4 * WINDOW_W, 0x00FF0000,
                                                 0x0000FF00, 0x000000FF, 0);
@@ -27,11 +24,11 @@ void window_update(window_t *wnd, nes_t *nes) {
     cpu_tick(nes);
 
     // 3 PPU ticks per CPU cycle
-    while ((nes->ppu->ticks != nes->cpu->cyc * 3) && !wnd->frame_ready) {
+    while (nes->ppu->ticks != nes->cpu->cyc * 3) {
       ppu_tick(nes, wnd);
     }
 
-    // TODO: APU ticks
+    // TODO: Decrement APU timers here
   }
 
   // Update the window surface and show it on the screen

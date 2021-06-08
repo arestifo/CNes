@@ -25,8 +25,7 @@ void cpu_init(nes_t *nes) {
   memcpy(cpu->mem + 0x8000, nes->cart->prg_rom,
          PRGROM_BLOCK_SZ * nes->cart->header.prgrom_n);
 
-  // Set the program counter to the right place
-//  cpu->pc = 0xC000;  // TODO: REMOVE! This is just for nestest
+  // Start program execution
   cpu->pc = cpu_read16(nes, VEC_RESET);
 }
 
@@ -185,6 +184,36 @@ static void cpu_interrupt(nes_t *nes, interrupt_t type) {
 
   // Jump to interrupt handler
   cpu->pc = cpu_read16(nes, vec);
+}
+
+// Performs OAM DMA (with cycle counting). Uploads a page of memory from $xx00 to $xxFF where xx
+// is the PPU OAM address (ppu->regs[OAMADDR])
+void cpu_oam_dma(nes_t *nes, u8 cpu_base_addr) {
+  u16 oam_idx;  // To check for overflows
+  bool odd_cycle;
+
+  cpu_t *cpu = nes->cpu;
+  ppu_t *ppu = nes->ppu;
+
+  // Copy page of memory to PPU OAM (+1 cycle to wait for writes to finish)
+  odd_cycle = cpu->cyc % 2 != 0;
+
+  // Even though we store OAM as a list of sprite_t's, this approach requires copying bytes directly
+  // So cast to a u8 pointer instead of a sprite_t pointer
+  // TODO: Verify this actually works lmao
+  for (int i = 0; i < OAM_NUM_SPR; i++) {
+    ppu->oam[i].y_pos    = cpu_read8(nes, cpu_base_addr + (i * 4));
+    ppu->oam[i].tile_idx = cpu_read8(nes, cpu_base_addr + (i * 4) + 1);
+    ppu->oam[i].attr     = cpu_read8(nes, cpu_base_addr + (i * 4) + 2);
+    ppu->oam[i].x_pos    = cpu_read8(nes, cpu_base_addr + (i * 4) + 3);
+  }
+
+  // We just did 256 reads/writes, so 512 cycles total + 1 to wait for pending writes
+  cpu->cyc += 513;
+
+  // And for some reason, if this was an odd cycle add an additional cycle
+  if (odd_cycle)
+    cpu->cyc++;
 }
 
 void cpu_tick(nes_t *nes) {

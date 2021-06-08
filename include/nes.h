@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include "SDL.h"
 #include "types.h"
@@ -21,8 +22,14 @@ typedef struct nes {
   cpu_t *cpu;
   ppu_t *ppu;
   cart_t *cart;
+
+  // Controller information
+//  bool update_controllers;
+  u8 ctrl1_sr;
 } nes_t;
 
 void nes_init(nes_t *nes, char *cart_fn);
 void nes_destroy(nes_t *nes);
+
+void controller_update(nes_t *nes);
 #endif

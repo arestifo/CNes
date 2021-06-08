@@ -5,20 +5,41 @@
 void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   if (addr >= 0x2000 && addr <= 0x3FFF) {
     ppu_reg_write(nes, addr % 8, val);
+  } else if (addr == CONTROLLER1_PORT) {
+    // TODO: Figure this out
+    if (val & 1) {
+      controller_update(nes);
+    }
+//    printf("cpu_write8: controller 1 port written=%d ticks=%u\n", val & 1, SDL_GetTicks());
+  } else if (addr == OAM_DMA_ADDR) {
+    // Performs CPU -> PPU OAM DMA. Suspends the CPU for 513 or 514 cycles
+    cpu_oam_dma(nes, val << 8);
   } else {
     nes->cpu->mem[addr] = val;
   }
 }
 
 u8 cpu_read8(nes_t *nes, u16 addr) {
+  cpu_t *cpu;
+  u8 retval;
+
+  cpu = nes->cpu;
   if (addr <= 0x1FFF) {
     // 2KB internal ram
-    return nes->cpu->mem[addr % 0x0800];
+    return cpu->mem[addr % 0x0800];
   } else if (addr >= 0x2000 && addr <= 0x3FFF) {
     // PPU registers ($2000-$2007) are mirrored from $2008-$3FFF
     return ppu_reg_read(nes, addr % 8);
-  } else if (addr >= 0x4000 && addr <= 0x4017) {
+  } else if (addr >= 0x4000 && addr <= 0x4015) {
     // TODO: APU registers and PPU OAM DMA
+  } else if (addr == CONTROLLER1_PORT) {
+    retval = nes->ctrl1_sr;
+    nes->ctrl1_sr >>= 1;
+
+//    printf("cpu_read8: controller 1 port read val=%02X\n", retval);
+    return retval & 1;
+  } else if (addr == CONTROLLER2_PORT) {
+    // TODO Controller 2 reads (low priority)
   } else if (addr >= 0x4018 && addr <= 0x401F) {
     printf("cpu_read8: reading cpu test mode registers is not supported.\n");
     exit(EXIT_FAILURE);
@@ -27,7 +48,7 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
 
     // 16K Mapper 0 ($C000-$FFFF is a mirror of $8000-$BFFF)
     if (addr >= 0x8000 && addr <= 0xFFFF)
-      return nes->cpu->mem[0x8000 + (addr % 0x4000)];
+      return cpu->mem[0x8000 + (addr % 0x4000)];
     printf("cpu_read8: invalid read from 0x%04X\n", addr); // TODO
   } else {
     printf("cpu_read8: invalid read from 0x%04X\n", addr);

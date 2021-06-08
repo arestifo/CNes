@@ -33,6 +33,10 @@
 
 #define CPU_MEM_SZ 0x10000
 
+#define OAM_DMA_ADDR     0x4014
+#define CONTROLLER1_PORT 0x4016
+#define CONTROLLER2_PORT 0x4017
+
 // There are four addressing modes that can incur page cross penalties:
 // Absolute,X, Absolute,Y, (Indirect),Y, and Relative
 // All instructions using these addressing modes incur page cross penalties
@@ -41,15 +45,15 @@
 
 // The NES uses a MOS Technology 6502 CPU with minimal modifications
 typedef struct cpu {
-  u8 a;                  // Accumulator register
-  u8 x;                  // X register
-  u8 y;                  // Y register
   u16 pc;                // Program counter register
-  u8 sp;                 // Stack pointer register
-  u8 p;                  // Status register
+  u8  a;                 // Accumulator register
+  u8  x;                 // X register
+  u8  y;                 // Y register
+  u8  sp;                // Stack pointer register
+  u8  p;                 // Status register
 
   u64 cyc;               // Cycles
-  u8 mem[CPU_MEM_SZ];    // Pointer to main memory
+  u8  mem[CPU_MEM_SZ];   // Pointer to main memory
 
   // Interrupt flags
   bool nmi_pending;
@@ -90,8 +94,8 @@ addrmode_t get_addrmode(u8 opcode);
 u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode);
 void cpu_set_nz(nes_t *nes, u8 result);
 void cpu_init(nes_t *nes);
-//void cpu_interrupt(nes_t *nes, interrupt_t type);
 void cpu_tick(nes_t *nes);
+void cpu_oam_dma(nes_t *nes, u8 cpu_base_addr);
 
 // Debugging util functions
 void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode);

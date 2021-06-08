@@ -6,7 +6,7 @@
 #define WINDOW_W 256
 #define WINDOW_H 240
 
-#define TARGET_FPS 60
+#define TARGET_FPS 120
 
 typedef struct window {
   SDL_Window *disp_window;

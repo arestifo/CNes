@@ -3,6 +3,7 @@
 #include "include/cpu.h"
 #include "include/ppu.h"
 #include "include/window.h"
+#include "include/mem.h"
 
 // Entry point of CNES
 // Initializes everything and begins ROM execution
@@ -16,6 +17,7 @@ int main(int argc, char **argv) {
   u32 ticks, frame_time;
   f32 ticks_per_frame;
   char *log_fn;
+  int i = 0;
 
   printf("cnes by Alex Restifo starting\n");
 //  log_fn = "/dev/null";
@@ -42,29 +44,22 @@ int main(int argc, char **argv) {
   window_init(&window);
 
   // Update the window 60 times per second
-  // TODO: This method of frame timing is not very accurate because it puts the
-  // TODO: main thread to sleep, leaving it at the mercy of OS scheduling.
-  // TODO: Experiment with VSync, SDL_GetPerformanceCounter(), and maybe spin-waiting
   ticks_per_frame = 1000.0 / TARGET_FPS;
   while (!g_shutdown) {
     ticks = SDL_GetTicks();
 
-    // Run the PPU & CPU until we have a frame ready to render to the screen
-    window_update(&window, &nes);
-
-    // Main event polling loop
+    // Main event polling loop TODO: Handle window resizing
+    // Also update the keyboard array so we can get input
     while (SDL_PollEvent(&event)) {
       switch (event.type) {
         case SDL_QUIT:
           g_shutdown = true;
           break;
-//        case SDL_WINDOWEVENT:
-//          if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-//            // TODO: Handle resizing
-//          }
-//          break;
       }
     }
+
+    // Run the PPU & CPU until we have a frame ready to render to the screen
+    window_update(&window, &nes);
 
     // Delay for enough time to get our desired FPS
     frame_time = SDL_GetTicks() - ticks;
@@ -76,4 +71,6 @@ int main(int argc, char **argv) {
   nes_destroy(&nes);
   nes_fclose(log_f);
   SDL_Quit();
+
+  exit(EXIT_SUCCESS);
 }
