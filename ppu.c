@@ -9,8 +9,8 @@
 static void ppu_palette_init(nes_t *nes, char *palette_fn) {
   // Palletes are stored as 64 sets of three integers for r, g, and b intensities
   FILE *palette_f;
-  color_t pal[PALETTE_SZ];
   SDL_PixelFormat *pixel_fmt;
+  color_t pal[PALETTE_SZ];
 
   // Read in the palette
   palette_f = nes_fopen(palette_fn, "rb");
@@ -60,8 +60,8 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
   // Get the current nametable byte
   // Nametables are 32x30 tiles, so we have to find the right tile index
   // TODO: Add mirroring support
-  u8 x_tile_idx = cur_x % 8;
-  u8 y_tile_idx = cur_y % 8;
+  u8 bgr_fine_x = cur_x % 8;
+  u8 bgr_fine_y = cur_y % 8;
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
   if (show_bgr) {
     u16 nt_base = 0x2000 + 0x0400 * (ppu->regs[PPUCTRL] & 3);
@@ -72,11 +72,11 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
     u16 bgr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
 
     // Fetch the two pattern table bytes from the index we got from the nametables
-    u16 bg_ptable_idx = bgr_pt_base + (bgr_tile * 16) + y_tile_idx;
+    u16 bg_ptable_idx = bgr_pt_base + (bgr_tile * 16) + bgr_fine_y;
     u8 bg_color_lo = ppu_read(nes, bg_ptable_idx);
     u8 bg_color_hi = ppu_read(nes, bg_ptable_idx + 8);
-    u8 bg_pal_idx_lo = !!(bg_color_lo & (0x80 >> x_tile_idx)) |
-                       !!(bg_color_hi & (0x80 >> x_tile_idx)) << 1;
+    u8 bg_pal_idx_lo = !!(bg_color_lo & (0x80 >> bgr_fine_x)) |
+                       !!(bg_color_hi & (0x80 >> bgr_fine_x)) << 1;
 
     // ***** Attribute table fetch *****
     u16 attr_base = nt_base + 0x3C0;
@@ -103,7 +103,6 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
   // ******** Sprite rendering ********
   // Look through each sprite in the secondary OAM and compare their X-positions to the current PPU X
   bool show_spr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
-//  show_spr = false;
   if (show_spr) {
     s8 active_spr_i = -1;
     for (int i = 0; i < SEC_OAM_NUM_SPR; i++) {
@@ -111,21 +110,22 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
       if (cur_spr.tile_idx) {
         if (cur_x >= cur_spr.x_pos && cur_x < cur_spr.x_pos + 8) {
           active_spr_i = i;
-          break;
+//          break;
         }
       }
     }
 
     if (active_spr_i >= 0) {
       sprite_t active_spr = ppu->sec_oam[active_spr_i];
+      u8 spr_fine_y = cur_y - active_spr.y_pos;
+      u8 spr_fine_x = cur_x - active_spr.x_pos;
 
       u16 spr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
-      u16 spr_ptable_idx = spr_pt_base + (active_spr.tile_idx * 16) + y_tile_idx;
+      u16 spr_ptable_idx = spr_pt_base + (active_spr.tile_idx * 16) + spr_fine_y;
       u8 spr_color_lo = ppu_read(nes, spr_ptable_idx);
       u8 spr_color_hi = ppu_read(nes, spr_ptable_idx + 8);
-      u8 spr_pal_idx_lo = !!(spr_color_lo & (0x80 >> x_tile_idx)) |
-                          !!(spr_color_hi & (0x80 >> x_tile_idx)) << 1;
-
+      u8 spr_pal_idx_lo = !!(spr_color_lo & (0x80 >> spr_fine_x)) |
+                          !!(spr_color_hi & (0x80 >> spr_fine_x)) << 1;
       u8 spr_pal_idx_hi = active_spr.attr & 3;
       u8 spr_pal_idx = spr_pal_idx_lo | (spr_pal_idx_hi << 2) | 0x10;
 
@@ -142,15 +142,17 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
 
   u8 uni_bgr_color = ppu_read(nes, PALETTE_BASE);
   u32 final_px;
+
   if (!bgr_color && !spr_color)
     final_px = ppu->palette[uni_bgr_color];
-  else if (bgr_color && !spr_color)
+  else if (!bgr_color)
+    final_px = ppu->palette[spr_color];
+  else if (!spr_color)
     final_px = ppu->palette[bgr_color];
   else
     final_px = spr_has_priority ? ppu->palette[spr_color] : ppu->palette[bgr_color];
 
-  u32 *pixel_buf = (u32 *) pixels;
-  pixel_buf[(cur_y * WINDOW_W) + cur_x] = final_px;
+  ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = final_px;
 }
 
 // Does a linear search through OAM to find up to 8 sprites to render for the current scanline
@@ -171,9 +173,8 @@ static void ppu_fill_sec_oam(nes_t *nes) {
 
     // Is the sprite in range, and does it already exist in the secondary OAM?
     if (cur_spr.tile_idx) {
-      if (cur_y >= cur_spr.y_pos && cur_y < cur_spr.y_pos + HEIGHT_OFFSET) {
+      if (cur_y >= cur_spr.y_pos && cur_y < cur_spr.y_pos + HEIGHT_OFFSET)
         ppu->sec_oam[sec_oam_i++] = cur_spr;
-      }
     }
   }
 }

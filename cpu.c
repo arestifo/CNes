@@ -194,10 +194,6 @@ void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
 
   // Copy page of memory to PPU OAM (+1 cycle to wait for writes to finish)
   bool odd_cycle = cpu->cyc % 2 != 0;
-
-  // Even though we store OAM as a list of sprite_t's, this approach requires copying bytes directly
-  // So cast to a u8 pointer instead of a sprite_t pointer
-  // TODO: Verify this actually works lmao
   for (int i = 0; i < OAM_NUM_SPR; i++) {
     ppu->oam[i].y_pos    = cpu_read8(nes, cpu_base_addr + (i * 4));
     ppu->oam[i].tile_idx = cpu_read8(nes, cpu_base_addr + (i * 4) + 1);
