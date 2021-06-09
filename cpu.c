@@ -825,6 +825,8 @@ inline void cpu_set_nz(nes_t *nes, u8 result) {
   SET_BIT(nes->cpu->p, Z_BIT, !result);
 }
 
+// TODO: This function mysteriously breaks things, I think it has something to do with the
+// TODO: cpu_read8 calls that have side effects when used on PPU regs, OAM DMA, controller regs etc
 void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   u8 num_operands, low, high;
   u16 addr;
@@ -857,8 +859,8 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
       if (opcode == 0x20 || opcode == 0x4C)
         fprintf(log_f, " $%04X                       ", operand);
       else {
-        // Don't access PPU regs
-        if (!(operand >= 0x2000 && operand <= 0x3FFF))
+        // We don't want to access regs that have side effects, like PPU regs, OAM DMA,
+        if (!(operand >= 0x2000 && operand <= 0x3FFF) && !(operand >= 0x4000 && operand <= 0x4020))
           fprintf(log_f, " $%04X = %02X                  ", operand, cpu_read8(nes, operand));
         else
           fprintf(log_f, " $%04X                       ", operand);

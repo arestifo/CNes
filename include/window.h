@@ -6,12 +6,10 @@
 #define WINDOW_W 256
 #define WINDOW_H 240
 
-#define TARGET_FPS 60
-
 typedef struct window {
   SDL_Window *disp_window;
-  SDL_Surface *pixel_surface;
-  SDL_Surface *window_surface;
+  SDL_Renderer *renderer;
+  SDL_Texture *texture;
 
   // 256x240 RGB buffer of pixel_surface to be drawn on the screen
   u32 pixels[WINDOW_H][WINDOW_W];

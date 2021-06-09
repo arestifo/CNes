@@ -96,7 +96,7 @@ u8 ppu_read(nes_t *nes, u16 addr);
 void ppu_write(nes_t *nes, u16 addr, u8 val);
 
 void ppu_init(nes_t *nes);
-void ppu_tick(nes_t *nes, window_t *wnd);
+void ppu_tick(nes_t *nes, window_t *wnd, void *pixels);
 void ppu_destroy(nes_t *nes);
 
 #endif

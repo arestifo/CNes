@@ -9,16 +9,20 @@
 static void ppu_palette_init(nes_t *nes, char *palette_fn) {
   // Palletes are stored as 64 sets of three integers for r, g, and b intensities
   FILE *palette_f;
-  color_t temp_pal[PALETTE_SZ];
-  palette_f = nes_fopen(palette_fn, "rb");
+  color_t pal[PALETTE_SZ];
+  SDL_PixelFormat *pixel_fmt;
 
   // Read in the palette
-  nes_fread(temp_pal, sizeof *temp_pal, PALETTE_SZ, palette_f);
+  palette_f = nes_fopen(palette_fn, "rb");
+  nes_fread(pal, sizeof *pal, PALETTE_SZ, palette_f);
   nes_fclose(palette_f);
 
   // Initialize internal palette from read palette data
+  pixel_fmt = SDL_AllocFormat(SDL_PIXELFORMAT_ARGB32);
   for (int i = 0; i < PALETTE_SZ; i++)
-    nes->ppu->palette[i] = (temp_pal[i].r << 16) | (temp_pal[i].g << 8) | temp_pal[i].b;
+    nes->ppu->palette[i] = SDL_MapRGBA(pixel_fmt, pal[i].r, pal[i].g, pal[i].b, 0xFF);
+
+  SDL_FreeFormat(pixel_fmt);
 }
 
 // Palette from http://www.firebrandx.com/nespalette.html
@@ -43,14 +47,13 @@ void ppu_init(nes_t *nes) {
   ppu_palette_init(nes, "../palette/palette.pal");
 }
 
-static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
+static void ppu_render_pixel(nes_t *nes, void *pixels) {
   // Rendering a pixel consists of rendering both background and sprites
   ppu_t *ppu = nes->ppu;
   u16 cur_x = ppu->x - 1;
   u16 cur_y = ppu->y - 1;
   u8 bgr_color = 0;
   u8 spr_color = 0;
-  u32 final_px = 0;
   bool spr_has_priority;
 
   // ******** Background rendering ********
@@ -62,14 +65,14 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
   if (show_bgr) {
     u16 nt_base = 0x2000 + 0x0400 * (ppu->regs[PPUCTRL] & 3);
-    u16 tile_idx = ((cur_y / 8) << 5) + (cur_x / 8);
+    u16 tile_idx = ((cur_y / 8) * 32) + (cur_x / 8);
     u8 bgr_tile = ppu_read(nes, nt_base + tile_idx);
 
     // bgr_tile is a tile index for the background pattern table
     u16 bgr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
 
     // Fetch the two pattern table bytes from the index we got from the nametables
-    u16 bg_ptable_idx = bgr_pt_base + (bgr_tile << 4) + y_tile_idx;
+    u16 bg_ptable_idx = bgr_pt_base + (bgr_tile * 16) + y_tile_idx;
     u8 bg_color_lo = ppu_read(nes, bg_ptable_idx);
     u8 bg_color_hi = ppu_read(nes, bg_ptable_idx + 8);
     u8 bg_pal_idx_lo = !!(bg_color_lo & (0x80 >> x_tile_idx)) |
@@ -79,7 +82,7 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
     u16 attr_base = nt_base + 0x3C0;
 
     // Attribute table bytes consist of four tiles with two bits of color information each
-    u16 attr_idx = attr_base + (8 * (cur_y / 32)) + (cur_x / 32);
+    u16 attr_idx = attr_base + ((cur_y / 32) * 8) + (cur_x / 32);
     u8 attr_byte = ppu_read(nes, attr_idx);
 
     // Get the "quadrant" of the attribute byte the current PPU position is at
@@ -100,6 +103,7 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
   // ******** Sprite rendering ********
   // Look through each sprite in the secondary OAM and compare their X-positions to the current PPU X
   bool show_spr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
+//  show_spr = false;
   if (show_spr) {
     s8 active_spr_i = -1;
     for (int i = 0; i < SEC_OAM_NUM_SPR; i++) {
@@ -116,11 +120,11 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
       sprite_t active_spr = ppu->sec_oam[active_spr_i];
 
       u16 spr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
-      u16 spr_ptable_idx = spr_pt_base + (active_spr.tile_idx << 4) + y_tile_idx;
+      u16 spr_ptable_idx = spr_pt_base + (active_spr.tile_idx * 16) + y_tile_idx;
       u8 spr_color_lo = ppu_read(nes, spr_ptable_idx);
       u8 spr_color_hi = ppu_read(nes, spr_ptable_idx + 8);
       u8 spr_pal_idx_lo = !!(spr_color_lo & (0x80 >> x_tile_idx)) |
-          !!(spr_color_hi & (0x80 >> x_tile_idx)) << 1;
+                          !!(spr_color_hi & (0x80 >> x_tile_idx)) << 1;
 
       u8 spr_pal_idx_hi = active_spr.attr & 3;
       u8 spr_pal_idx = spr_pal_idx_lo | (spr_pal_idx_hi << 2) | 0x10;
@@ -137,6 +141,7 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
   }
 
   u8 uni_bgr_color = ppu_read(nes, PALETTE_BASE);
+  u32 final_px;
   if (!bgr_color && !spr_color)
     final_px = ppu->palette[uni_bgr_color];
   else if (bgr_color && !spr_color)
@@ -144,7 +149,8 @@ static void ppu_render_pixel(nes_t *nes, window_t *wnd) {
   else
     final_px = spr_has_priority ? ppu->palette[spr_color] : ppu->palette[bgr_color];
 
-  wnd->pixels[cur_y][cur_x] = final_px;
+  u32 *pixel_buf = (u32 *) pixels;
+  pixel_buf[(cur_y * WINDOW_W) + cur_x] = final_px;
 }
 
 // Does a linear search through OAM to find up to 8 sprites to render for the current scanline
@@ -174,7 +180,7 @@ static void ppu_fill_sec_oam(nes_t *nes) {
 
 // Renders a single pixel at the current PPU position
 // Also controls timing and issues NMIs to the CPU on VBlank
-void ppu_tick(nes_t *nes, window_t *wnd) {
+void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
   // TODO: Even and odd frames have slightly different behavior with idle cycles
   ppu_t *ppu = nes->ppu;
 
@@ -182,6 +188,8 @@ void ppu_tick(nes_t *nes, window_t *wnd) {
     // Pre-render scanline
     // Clear NMI flag on the second dot of the pre-render scanline
     if (ppu->x == 1) {
+      // All visible scanlines have been rendered, frame is ready to be displayed
+      wnd->frame_ready = true;
       ppu->frameno++;
       ppu->nmi_occurred = false;
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
@@ -198,15 +206,14 @@ void ppu_tick(nes_t *nes, window_t *wnd) {
 
     if (ppu->x >= 1 && ppu->x <= 256) {
       // Render a visible pixel to the framebuffer
-      ppu_render_pixel(nes, wnd);
+      ppu_render_pixel(nes, pixels);
     } else if (ppu->x >= 257 && ppu->x <= 320) {
       // Set OAMADDR to 0
       ppu->regs[OAMADDR] = 0x00;
     }
   } else if (ppu->y == 241) {
     // Post-render scanline
-    // All visible scanlines have been rendered, frame is ready to be displayed
-    wnd->frame_ready = true;
+
   } else if (ppu->y >= 242 && ppu->y <= 261) {
     // VBlank scanlines
     // Issue NMI at the second dot (x=1) of the first VBlank scanline
@@ -223,7 +230,7 @@ void ppu_tick(nes_t *nes, window_t *wnd) {
   ppu->ticks++;
   ppu->x = ppu->ticks % DOTS_PER_SCANLINE;
   ppu->y = (ppu->ticks / DOTS_PER_SCANLINE) % NUM_SCANLINES;
-//  printf("ppu_tick: x=%d y=%d cyc=%llu\n", ppu->x, ppu->y, ppu->ticks);
+//  printf("ppu_tick: x=%d y=%d ticks=%llu\n", ppu->x, ppu->y, ppu->ticks);
 }
 
 u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {

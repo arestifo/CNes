@@ -10,7 +10,6 @@ FILE *log_f;
 static bool g_shutdown = false;
 
 static void keyboard_input(nes_t *nes, SDL_Keycode sc, bool keydown) {
-//  assert(keydown == 0 || keydown == 1);
   u8 n;
   switch (sc) {
     case SDLK_l:  // L = button A
@@ -53,10 +52,7 @@ int main(int argc, char **argv) {
   nes_t nes;
   window_t window;
   SDL_Event event;
-  u32 ticks, frame_time;
-  f32 ticks_per_frame;
   char *log_fn;
-  int i = 0;
 
   printf("cnes by Alex Restifo starting\n");
   log_fn = "../logs/cnes.log";
@@ -82,11 +78,8 @@ int main(int argc, char **argv) {
   window_init(&window);
 
   // Update the window 60 times per second
-  ticks_per_frame = 1000.0 / TARGET_FPS;
   while (!g_shutdown) {
-    ticks = SDL_GetTicks();
-
-    // Main event polling loop TODO: Handle window resizing
+    // Main event polling loop
     // Also update the keyboard array so we can get input
     while (SDL_PollEvent(&event)) {
       switch (event.type) {
@@ -106,9 +99,7 @@ int main(int argc, char **argv) {
     window_update(&window, &nes);
 
     // Delay for enough time to get our desired FPS
-    frame_time = SDL_GetTicks() - ticks;
-//    printf("main: frametime=%d (%.2f fps)\n", frame_time, 1000.0 / frame_time);
-//    SDL_Delay(MAX(ticks_per_frame - frame_time, 0));
+//    printf("main: frameno=%llu\n", nes.ppu->frameno);
   }
 
   // Clean up
