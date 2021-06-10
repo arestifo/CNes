@@ -47,6 +47,7 @@ u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
     case ZP_IDX_Y:
       return (addr + cpu->y) & 0xFF;
     case REL:
+      // Fortunately, the 6502 uses two's complement for signed numbers, so casting to s8 works perfectly
       return cpu->pc + ((s8) addr);
     case ABS_IND:
       // The only instruction to use this addrmode_t is JMP, which has a bug
@@ -78,6 +79,11 @@ u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
   }
 }
 
+// Having two functions to resolve addresses is sub-optimal and a byproduct of some poor choices I
+// made early on in CPU development. This seems to count cycles pretty well so whatever
+// I designed the address decoder like this because it avoided having a massive switch case for
+// every instruction to count cycles properly. This function count cycles for every addressing mode
+// accurately without bloat in cpu_tick()
 static u16
 cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
   u8 low, high;
@@ -157,6 +163,7 @@ addrmode_t get_addrmode(u8 opcode) {
 }
 
 // TODO: If possible, add interrupt hijacking support
+// (it's likely not possible without sub-instruction level emulation)
 // https://wiki.nesdev.com/w/index.php/CPU_interrupts
 static void cpu_interrupt(nes_t *nes, interrupt_t type) {
   cpu_t *cpu;
@@ -192,13 +199,14 @@ void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
   cpu_t *cpu = nes->cpu;
   ppu_t *ppu = nes->ppu;
 
-  // Copy page of memory to PPU OAM (+1 cycle to wait for writes to finish)
+  // Copy page of memory to PPU OAM
   bool odd_cycle = cpu->cyc % 2 != 0;
   for (int i = 0; i < OAM_NUM_SPR; i++) {
-    ppu->oam[i].y_pos    = cpu_read8(nes, cpu_base_addr + (i * 4));
-    ppu->oam[i].tile_idx = cpu_read8(nes, cpu_base_addr + (i * 4) + 1);
-    ppu->oam[i].attr     = cpu_read8(nes, cpu_base_addr + (i * 4) + 2);
-    ppu->oam[i].x_pos    = cpu_read8(nes, cpu_base_addr + (i * 4) + 3);
+    ppu->oam[i].data.y_pos    = cpu_read8(nes, cpu_base_addr + (i * 4));
+    ppu->oam[i].data.tile_idx = cpu_read8(nes, cpu_base_addr + (i * 4) + 1);
+    ppu->oam[i].data.attr     = cpu_read8(nes, cpu_base_addr + (i * 4) + 2);
+    ppu->oam[i].data.x_pos    = cpu_read8(nes, cpu_base_addr + (i * 4) + 3);
+    ppu->oam[i].sprite0       = i == 0;
   }
 
   // We just did 256 reads/writes, so 512 cycles total + 1 to wait for pending writes
@@ -826,7 +834,6 @@ inline void cpu_set_nz(nes_t *nes, u8 result) {
 void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   u8 num_operands, low, high;
   u16 addr;
-  u64 ppu_cyc;
   cpu_t *cpu;
 
   cpu = nes->cpu;

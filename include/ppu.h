@@ -58,10 +58,14 @@ typedef struct color {
 } color_t;
 
 typedef struct sprite {
-  u8 y_pos;     // Y position of the
-  u8 tile_idx;  // Index into the sprite pattern table
-  u8 attr;      // Sprite attributes: lower 2 color bits, flipping,
-  u8 x_pos;     // X position of the left of the sprite
+  struct {
+    u8 y_pos;     // Y position of the
+    u8 tile_idx;  // Index into the sprite pattern table
+    u8 attr;      // Sprite attributes: lower 2 color bits, flipping,
+    u8 x_pos;     // X position of the left of the sprite
+  } data;
+
+  bool sprite0;   // Set to true if this sprite triggers sprite zero hit
 } sprite_t;
 
 typedef struct ppu {
@@ -88,11 +92,11 @@ typedef struct ppu {
 
 // PPU register access
 // These functions can be thought of as an interface between the CPU and PPU
-u8 ppu_reg_read(nes_t *nes, ppureg_t reg);
+u8   ppu_reg_read(nes_t *nes, ppureg_t reg);
 void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val);
 
 // Internal PPU read functions. Should only be called by internal PPU functions
-u8 ppu_read(nes_t *nes, u16 addr);
+u8   ppu_read(nes_t *nes, u16 addr);
 void ppu_write(nes_t *nes, u16 addr, u8 val);
 
 void ppu_init(nes_t *nes);

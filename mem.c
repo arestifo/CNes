@@ -1,6 +1,7 @@
 #include "include/mem.h"
 #include "include/ppu.h"
 #include "include/cpu.h"
+#include "include/cart.h"
 
 void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   if (addr >= 0x2000 && addr <= 0x3FFF) {
@@ -50,8 +51,13 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     // TODO: PRG ROM, PRG RAM, and mapper registers
 
     // 16K Mapper 0 ($C000-$FFFF is a mirror of $8000-$BFFF)
-    if (addr >= 0x8000 && addr <= 0xFFFF)
-      return cpu->mem[0x8000 + (addr % 0x4000)];
+    // TODO: THIS IS NOT EXTENSIBLE! USE MAPPER FUNCTIONS INSTEAD
+    if (addr >= 0x8000 && addr <= 0xFFFF) {
+      if (nes->cart->header.prgrom_n == 1)
+        return cpu->mem[0x8000 + (addr % 0x4000)];  // NROM-128 has last 16k mirror the first 16k
+      else
+        return cpu->mem[addr];  // NROM-256
+    }
     printf("cpu_read8: invalid read from 0x%04X\n", addr); // TODO
   } else {
     printf("cpu_read8: invalid read from 0x%04X\n", addr);
