@@ -4,6 +4,8 @@
 #include "include/cpu.h"
 #include "include/cart.h"
 
+static bool write_toggle = false;
+
 // Reads in a .pal file as the NES system palette
 // TODO: Generate palettes (low priority)
 static void ppu_palette_init(nes_t *nes, char *palette_fn) {
@@ -271,6 +273,7 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
     case PPUSTATUS:
       // Clear vblank bit every PPUSTATUS read
       retval = ppu->regs[PPUSTATUS];
+      write_toggle = false;
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
       return retval;
     case PPUDATA:
@@ -295,8 +298,6 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
 void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
   // These variables check what "phase" of the write-twice registers (PPUADDR & PPUSCROLL)
   // the PPU is in (which is why they are static -- we want persistent state)
-  static bool ppuaddr_written = false;
-  static bool ppuscroll_written = false;
   ppu_t *ppu = nes->ppu;
   u8 vram_inc;
 
@@ -305,10 +306,17 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       // The first PPUADDR write is the high byte of VRAM to be accessed, and the second byte
       // is the low byte
       // Clear the vram address if we're writing a new one in
-      if (!ppuaddr_written)
+      if (!write_toggle)
         ppu->vram_addr = 0x0000;
-      ppu->vram_addr |= ppuaddr_written ? val : (val << 8);
-      ppuaddr_written ^= true;  // Toggle ppuaddr_written
+      ppu->vram_addr |= write_toggle ? val : (val << 8);
+      write_toggle ^= true;  // Toggle ppuaddr_written
+      break;
+    case PPUSCROLL:
+      if (write_toggle)
+        ppu->scroll_y = val;
+      else
+        ppu->scroll_x = val;
+      write_toggle ^= true;
       break;
     case PPUCTRL:
       ppu->regs[PPUCTRL] = val;
@@ -320,13 +328,6 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
     case PPUMASK:
       // TODO: Add color emphasizing support and show/hide background support
       ppu->regs[PPUMASK] = val;
-      break;
-    case PPUSCROLL:
-      if (ppuscroll_written)
-        ppu->scroll_y = val;
-      else
-        ppu->scroll_x = val;
-      ppuscroll_written ^= true;
       break;
     case PPUDATA:
       vram_inc = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_VRAM_INC_BIT) ? 32 : 1;
@@ -350,21 +351,6 @@ static u16 ppu_decode_addr(nes_t *nes, u16 addr) {
 
   // $3F20-$3FFF are mirrors of $3F00-$3F1F (palette)
   // $3000-$3EFF are mirrors of $2000-$2EFF (nametables)
-  switch (ppu->mirroring) {
-    case MT_HORIZONTAL:
-      // Clear bit 10 to mirror down
-      if ((addr >= 0x2400 && addr <= 0x27FF) || (addr >= 0x2C00 && addr <= 0x2FFF))
-        addr &= ~0x400;
-      break;
-    case MT_VERTICAL:
-      // Clear bit 11 to mirror down
-      if ((addr >= 0x2800 && addr <= 0x2BFF) || (addr >= 0x2C00 && addr <= 0x2FFF))
-        addr &= ~0x800;
-      break;
-    default:
-      printf("ppu_decode_addr: invalid mirroring!\n");
-      exit(EXIT_FAILURE);
-  }
 
   // Other mirrored addresses
   if (addr >= 0x3000 && addr <= 0x3EFF) {
@@ -375,6 +361,25 @@ static u16 ppu_decode_addr(nes_t *nes, u16 addr) {
       addr &= ~0x10;
   } else if (addr >= 0x3F20 && addr <= 0x3FFF) {
     addr = PALETTE_BASE + addr % 0x20;
+  }
+
+  // PPU mirroring
+  switch (ppu->mirroring) {
+    case MT_HORIZONTAL:
+//    case MT_VERTICAL:
+      // Clear bit 10 to mirror down
+      if ((addr >= 0x2400 && addr <= 0x27FF) || (addr >= 0x2C00 && addr <= 0x2FFF))
+        addr &= ~0x400;
+      break;
+    case MT_VERTICAL:
+//    case MT_HORIZONTAL:
+      // Clear bit 11 to mirror down
+      if ((addr >= 0x2800 && addr <= 0x2BFF) || (addr >= 0x2C00 && addr <= 0x2FFF))
+        addr &= ~0x800;
+      break;
+    default:
+      printf("ppu_decode_addr: invalid mirroring!\n");
+      exit(EXIT_FAILURE);
   }
 
   return addr;
