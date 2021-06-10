@@ -67,122 +67,97 @@ static inline u32 get_palette_color(nes_t *nes, u8 color_i) {
 
 // Renders a single pixel. Run during every PPU visible pixel cycle.
 // pixels is an array of ARGB32 values representing the SDL framebuffer we are drawing to
+// Information from https://wiki.nesdev.com/w/index.php/PPU_scrolling
 static void ppu_render_pixel(nes_t *nes, void *pixels) {
   // Rendering a pixel consists of rendering both background and sprites
   ppu_t *ppu = nes->ppu;
-  u16 cur_x = ppu->x - 1;
-  u16 cur_y = ppu->y - 1;
-  u8 bgr_color = 0;
-  u8 spr_color = 0;
-  bool spr_has_priority;
+  u16 cur_x = ppu->x - 1;  // [0,255]
+  u16 cur_y = ppu->y - 1;  // [0,239]
 
-  // ******** Background rendering ********
-  // Get the current nametable byte
-  // Nametables are 32x30 tiles, so we have to find the right tile index
-  // TODO: Add mirroring support
-  u8 bgr_fine_x = cur_x % 8;
-  u8 bgr_fine_y = cur_y % 8;
+  // Input to pixel priority multiplexer
+  u8 bgr_color_idx = 0;
+  u8 spr_color_idx = 0;
+
+  // **************** Background rendering ****************
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
+  u8 coarse_x = cur_x / 8;  // tile x index
+  u8 coarse_y = cur_y / 8;  // tile y index
+  u8 fine_x = cur_x % 8;    // fine x index within the tile
+  u8 fine_y = cur_y % 8;    // fine y index within the tile
+  u8 cur_nt = ppu->regs[PPUCTRL] & 3;  // TODO: Remember to increment this properly
+
   if (show_bgr) {
-    u16 nt_base = 0x2000 + 0x0400 * (ppu->regs[PPUCTRL] & 3) /* + ppu->scroll_x / 8*/;
-    u16 tile_idx = ((cur_y / 8) * 32) + (cur_x / 8);
-    u8 bgr_tile = ppu_read(nes, nt_base + tile_idx);
+    // **** Get pattern table and attribute values ****
+    // Create an index into the pattern table from value at nametable idx
+    ppu->vram_addr = 0x2000 + ((coarse_x & 0x1F) | ((coarse_y & 0x1F) << 5) | (cur_nt << 10));
 
-    // bgr_tile is a tile index for the background pattern table
-    u16 bgr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
+    // Get the pattern table index from the nametable index
+    u8 tile_idx = ppu_read(nes, ppu->vram_addr);
+    u8 tile_row = tile_idx / 16;
+    u8 tile_col = tile_idx % 16;
 
-    // Fetch the two pattern table bytes from the index we got from the nametables
-    u16 bg_ptable_idx = bgr_pt_base + (bgr_tile * 16) + bgr_fine_y;
-    u8 bg_color_lo = ppu_read(nes, bg_ptable_idx);
-    u8 bg_color_hi = ppu_read(nes, bg_ptable_idx + 8);
-    u8 bg_pal_idx_lo = !!(bg_color_lo & (0x80 >> bgr_fine_x)) |
-                       !!(bg_color_hi & (0x80 >> bgr_fine_x)) << 1;
+    // **** Read two bytes from the pattern table ****
+    u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
 
-    // ***** Attribute table fetch *****
-    u16 attr_base = nt_base + 0x3C0;
+    // Each tile in the pattern table has 16 bytes: 8 for the lower plane (bit 0 of color),
+    // 8 for the upper plane (bit 1 of color)
+    u16 pt_addr = pt_base + tile_idx * 16 + fine_y;
+    u8 pt_val_lo = ppu_read(nes, pt_addr);
+    u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
 
-    // Attribute table bytes consist of four tiles with two bits of color information each
-    u16 attr_idx = attr_base + ((cur_y / 32) * 8) + (cur_x / 32);
-    u8 attr_byte = ppu_read(nes, attr_idx);
+    // **** Extract two pattern table color bits ****
+    // We're ANDing with a mask > 1, but we want bit_lo and bit_hi to be in {0..1}
+    // The !! "operator" returns 1 if its input > 0 and 0 if its input is 0. It is essentially
+    // casts a number to a bool
+    u8 pt_bit_lo = !!(pt_val_lo & (0x80 >> fine_x));
+    u8 pt_bit_hi = !!(pt_val_hi & (0x80 >> fine_x));
+    u8 pt_color_bits = pt_bit_lo | (pt_bit_hi << 1);
 
-    // Get the "quadrant" of the attribute byte the current PPU position is at
-    u8 attr_quadr_x = (cur_x % 32) >= 16;
-    u8 attr_quadr_y = (cur_y % 32) >= 16;
-    u8 pal_shift = 2 * (attr_quadr_x | (attr_quadr_y << 1));
-    u8 bg_pal_idx_hi = (attr_byte & (3 << pal_shift)) >> pal_shift;
+    // **** Get attribute table byte ****
+    u16 attrib_base = 0x3C0;  // 0b00 1111 000 000;
 
-    // Palette indices are 5 bits since there are 64 colors
-    u8 bgr_pal_idx = bg_pal_idx_lo | (bg_pal_idx_hi << 2);
+    // Upper three bits of coarse x, upper three bits of coarse y, attribute offset, nametable
+    u16 attrib_addr = ((coarse_x & 0x1C) >> 2) | (((coarse_y & 0x1C) >> 2) << 3) | attrib_base | (cur_nt << 10);
+    u8 attrib_val = ppu_read(nes, 0x2000 + attrib_addr);
 
-    // Get an index into the system palette from the upper two bits specified in the attribute table
-    // and the lower two bits specified in the pattern table
-    u16 bgr_color_i = PALETTE_BASE + bgr_pal_idx;
-    bgr_color = bgr_color_i & 3 ? ppu_read(nes, bgr_color_i) : 0;
+    // **** Extract attribute table bits ****
+    // Each attribute table byte controls four sub-tiles of two bytes each
+    // Find the x and y "quadrants" of the current tile
+    u8 attrib_quadx = tile_col & 1;
+    u8 attrib_quady = tile_row & 1;
+
+    // Get the two attribute bits (colors) from the calculated quadrants
+    u8 attrib_idx_shift = 2 * (attrib_quadx | (attrib_quady << 1));
+    u8 attrib_color_bits = (attrib_val & (3 << attrib_idx_shift)) >> attrib_idx_shift;
+
+    // Calculate an index into the background palette from the palette and attribute color bits
+    u16 bgr_pal_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2));
+
+    // Get an index into the system palette from the background palette index
+    bgr_color_idx = bgr_pal_idx & 3 ? ppu_read(nes, bgr_pal_idx) : 0;
   }
-  // **** End background rendering ****
 
-  // ******** Sprite rendering ********
+  // ************** End background rendering **************
+
+  // ****************** Sprite rendering ******************
   // Look through each sprite in the secondary OAM and compare their X-positions to the current PPU X
   bool show_spr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
-  sprite_t active_spr;
   if (show_spr) {
-    s8 active_spr_i = -1;
-    for (int i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
-      sprite_t cur_spr = ppu->sec_oam[i];
-      if (cur_spr.data.tile_idx) {
-        if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8)
-          active_spr_i = i;
-      }
-    }
 
-    // TODO: Sprite attributes
-    if (active_spr_i >= 0) {
-      active_spr = ppu->sec_oam[active_spr_i];
-      u8 spr_fine_y = cur_y - active_spr.data.y_pos;
-      u8 spr_fine_x = cur_x - active_spr.data.x_pos;
-      bool flip_h = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPH_BIT);
-      bool flip_v = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPV_BIT);
+  }
+  // **************** End sprite rendering ****************
 
-      // The bit we select from both the low and high pattern table reads changes depending on
-      // the horizontal mirroring attribute. (8..0 w/ no h-mirroring, 0..8 w/ h-mirroring)
-      u8 spr_pix_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
-//      if (flip_v)
-//        printf("flip_v\n");
+  // **************** Pixel multiplexer/display ****************
+  u32 final_pixel;
 
-      u16 spr_pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
-      u16 spr_ptable_idx = spr_pt_base + (active_spr.data.tile_idx * 16) + spr_fine_y;
-      u8 spr_color_lo = ppu_read(nes, spr_ptable_idx);
-      u8 spr_color_hi = ppu_read(nes, spr_ptable_idx + 8);
-      u8 spr_pal_idx_lo = !!(spr_color_lo & spr_pix_mask) | !!(spr_color_hi & spr_pix_mask) << 1;
-      u8 spr_pal_idx_hi = active_spr.data.attr & 3;
-      u8 spr_pal_idx = spr_pal_idx_lo | (spr_pal_idx_hi << 2) | 0x10;
-      u16 spr_color_i = PALETTE_BASE + spr_pal_idx;
-
-      spr_color = spr_color_i & 3 ? ppu_read(nes, spr_color_i) : 0;
-      spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
-    }
+  u8 uni_bgr_color_idx = ppu_read(nes, PALETTE_BASE);
+  if (!bgr_color_idx) {
+    final_pixel = get_palette_color(nes, uni_bgr_color_idx);
+  } else {
+    final_pixel = get_palette_color(nes, bgr_color_idx);
   }
 
-  u8 uni_bgr_color = ppu_read(nes, PALETTE_BASE);
-  u32 final_px;
-
-  if (!bgr_color && !spr_color)
-    final_px = get_palette_color(nes, uni_bgr_color);
-  else if (!bgr_color)
-    final_px = get_palette_color(nes, spr_color);
-  else if (!spr_color)
-    final_px = get_palette_color(nes, bgr_color);
-  else {
-    // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
-    // detection. Check that here
-    // TODO: Don't trigger sprite zero hit when the left-side clipping window is enabled
-    if (active_spr.sprite0)
-      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
-    final_px = spr_has_priority ? get_palette_color(nes, spr_color)
-                                : get_palette_color(nes, bgr_color);
-  }
-
-  ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = final_px;
+  ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = final_pixel;
 }
 
 // Does a linear search through OAM to find up to 8 sprites to render for the current scanline
@@ -360,7 +335,7 @@ static u16 ppu_decode_addr(nes_t *nes, u16 addr) {
     if ((addr & 3) == 0)
       addr &= ~0x10;
   } else if (addr >= 0x3F20 && addr <= 0x3FFF) {
-    addr = PALETTE_BASE + addr % 0x20;
+    addr = ppu_decode_addr(nes, PALETTE_BASE + addr % 0x20);
   }
 
   // PPU mirroring
