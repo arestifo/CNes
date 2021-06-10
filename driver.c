@@ -76,7 +76,8 @@ int main(int argc, char **argv) {
   // Initialize the NES and display window
   nes_init(&nes, argv[1]);
   window_init(&window);
-  // REMOVE
+
+  // TODO: Make this configurable
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);
 
   // Update the window 60 times per second

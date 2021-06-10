@@ -3,17 +3,6 @@
 
 #include "nes.h"
 
-typedef enum ppureg {
-  PPUCTRL,    // $2000: PPU control register (write)
-  PPUMASK,    // $2001: PPU mask register (write)
-  PPUSTATUS,  // $2002: PPU status register (read)
-  OAMADDR,    // $2003: OAM address register (write)
-  OAMDATA,    // $2004: OAM data register (read, write)
-  PPUSCROLL,  // $2005: PPU scroll position register (write twice)
-  PPUADDR,    // $2006: PPU VRAM address register (write twice)
-  PPUDATA     // $2007: PPU VRAM data register (read, write)
-} ppureg_t;
-
 #define PPUCTRL_VRAM_INC_BIT      2
 #define PPUCTRL_SPR_PT_BASE_BIT   3
 #define PPUCTRL_BGR_PT_BASE_BIT   4
@@ -51,6 +40,22 @@ typedef enum ppureg {
 #define OAM_NUM_SPR     64
 #define SEC_OAM_NUM_SPR 8
 
+typedef enum ppureg {
+  PPUCTRL,    // $2000: PPU control register (write)
+  PPUMASK,    // $2001: PPU mask register (write)
+  PPUSTATUS,  // $2002: PPU status register (read)
+  OAMADDR,    // $2003: OAM address register (write)
+  OAMDATA,    // $2004: OAM data register (read, write)
+  PPUSCROLL,  // $2005: PPU scroll position register (write twice)
+  PPUADDR,    // $2006: PPU VRAM address register (write twice)
+  PPUDATA     // $2007: PPU VRAM data register (read, write)
+} ppureg_t;
+
+// TODO: Add other mirroring types and support for dynamically changing mirroring
+typedef enum mirroring_type {
+  MT_HORIZONTAL, MT_VERTICAL
+} mirroring_type_t;
+
 typedef struct color {
   u8 r;
   u8 g;
@@ -84,6 +89,7 @@ typedef struct ppu {
   u16 y;                        // Current Y position (current dot)
   u8  scroll_x;                 // Current scroll X position
   u8  scroll_y;                 // Current scroll Y position
+  mirroring_type_t mirroring;   // What time of mirroring the PPU is using
   bool nmi_occurred;            // Whether the PPU is currently generating NMIs or not
 
   u64 ticks;                    // Number of PPU cycles

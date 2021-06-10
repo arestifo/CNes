@@ -43,6 +43,10 @@ void ppu_init(nes_t *nes) {
   // TODO: This only works for mapper 0! Add more mappers later
   memcpy(ppu->mem, nes->cart->chr_rom, nes->cart->header.chrrom_n * CHRROM_BLOCK_SZ);
 
+  // Set mirroring type from cart (this will get overridden by mappers that control mirroring)
+  // This only applies to static-mirroring mappers
+  ppu->mirroring = nes->cart->header.flags6 & 1 ? MT_VERTICAL : MT_HORIZONTAL;
+
   // Set up system palette
   ppu_palette_init(nes, "../palette/palette.pal");
 }
@@ -78,7 +82,7 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
   u8 bgr_fine_y = cur_y % 8;
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
   if (show_bgr) {
-    u16 nt_base = 0x2000 + 0x0400 * (ppu->regs[PPUCTRL] & 3);
+    u16 nt_base = 0x2000 + 0x0400 * (ppu->regs[PPUCTRL] & 3) /* + ppu->scroll_x / 8*/;
     u16 tile_idx = ((cur_y / 8) * 32) + (cur_x / 8);
     u8 bgr_tile = ppu_read(nes, nt_base + tile_idx);
 
@@ -197,8 +201,9 @@ static void ppu_fill_sec_oam(nes_t *nes) {
 
     // Is the sprite in range, and does it already exist in the secondary OAM?
     if (cur_spr.data.tile_idx) {
-      if (cur_y >= cur_spr.data.y_pos && cur_y < cur_spr.data.y_pos + HEIGHT_OFFSET)
+      if (cur_y >= cur_spr.data.y_pos && cur_y < cur_spr.data.y_pos + HEIGHT_OFFSET) {
         ppu->sec_oam[sec_oam_i++] = cur_spr;
+      }
     }
   }
 }
@@ -340,34 +345,54 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
   }
 }
 
-u8 ppu_read(nes_t *nes, u16 addr) {
+static u16 ppu_decode_addr(nes_t *nes, u16 addr) {
+  ppu_t *ppu = nes->ppu;
+
   // $3F20-$3FFF are mirrors of $3F00-$3F1F (palette)
   // $3000-$3EFF are mirrors of $2000-$2EFF (nametables)
-  // Convert the address by clearing the 12th bit (0x1000)
-  if (addr >= 0x3000 && addr <= 0x3EFF)
+  switch (ppu->mirroring) {
+    case MT_HORIZONTAL:
+      // Clear bit 10 to mirror down
+      if ((addr >= 0x2400 && addr <= 0x27FF) || (addr >= 0x2C00 && addr <= 0x2FFF))
+        addr &= ~0x400;
+      break;
+    case MT_VERTICAL:
+      // Clear bit 11 to mirror down
+      if ((addr >= 0x2800 && addr <= 0x2BFF) || (addr >= 0x2C00 && addr <= 0x2FFF))
+        addr &= ~0x800;
+      break;
+    default:
+      printf("ppu_decode_addr: invalid mirroring!\n");
+      exit(EXIT_FAILURE);
+  }
+
+  // Other mirrored addresses
+  if (addr >= 0x3000 && addr <= 0x3EFF) {
+    // Convert the address by clearing the 12th bit (0x1000)
     addr &= ~0x1000;
-  else if (addr >= 0x3F10 && addr <= 0x3F1F) {
+  } else if (addr >= 0x3F10 && addr <= 0x3F1F) {
     if ((addr & 3) == 0)
       addr &= ~0x10;
-  } else if (addr >= 0x3F20 && addr <= 0x3FFF)
+  } else if (addr >= 0x3F20 && addr <= 0x3FFF) {
     addr = PALETTE_BASE + addr % 0x20;
+  }
 
-  return nes->ppu->mem[addr];
+  return addr;
+}
+
+u8 ppu_read(nes_t *nes, u16 addr) {
+  u16 decoded_addr = ppu_decode_addr(nes, addr);
+
+  return nes->ppu->mem[decoded_addr];
 }
 
 void ppu_write(nes_t *nes, u16 addr, u8 val) {
-  if (addr >= 0x3000 && addr <= 0x3EFF)
-    addr &= ~0x1000;
-  else if (addr >= 0x3F10 && addr <= 0x3F1F) {
-    if ((addr & 3) == 0)
-      addr &= ~0x10;
-  } else if (addr >= 0x3F20 && addr <= 0x3FFF)
-    addr = PALETTE_BASE + addr % 0x20;
+  u16 decoded_addr = ppu_decode_addr(nes, addr);
 
-  nes->ppu->mem[addr] = val;
+  nes->ppu->mem[decoded_addr] = val;
 }
 
 void ppu_destroy(nes_t *nes) {
-
+  // TODO?
 }
 
