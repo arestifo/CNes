@@ -85,10 +85,16 @@ typedef struct ppu {
   // PPU scanline positions
   u64 frameno;                  // Current PPU frame
   u16 vram_addr;                // Current VRAM address
-  u16 x;                        // Current X position (dot within current scanline)
-  u16 y;                        // Current Y position (current dot)
-  u8  scroll_x;                 // Current scroll X position
-  u8  scroll_y;                 // Current scroll Y position
+  u16 dot;                      // Current X position (dot within current scanline)
+  u16 scanline;                 // Current Y position (current dot)
+
+  // Internal PPU positions used when rendering
+  u8 coarse_x;                  // X index of the current tile
+  u8 coarse_y;                  // Y index of the current tile
+  u8 fine_x;                    // X offset within the current tile for the current pixel
+  u8 fine_y;                    // Y offset within the current tile for the current pixel
+
+  // PPU Flags and metadata
   mirroring_type_t mirroring;   // What time of mirroring the PPU is using
   bool nmi_occurred;            // Whether the PPU is currently generating NMIs or not
 
@@ -98,11 +104,11 @@ typedef struct ppu {
 
 // PPU register access
 // These functions can be thought of as an interface between the CPU and PPU
-u8   ppu_reg_read(nes_t *nes, ppureg_t reg);
+u8 ppu_reg_read(nes_t *nes, ppureg_t reg);
 void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val);
 
 // Internal PPU read functions. Should only be called by internal PPU functions
-u8   ppu_read(nes_t *nes, u16 addr);
+u8 ppu_read(nes_t *nes, u16 addr);
 void ppu_write(nes_t *nes, u16 addr, u8 val);
 
 void ppu_init(nes_t *nes);

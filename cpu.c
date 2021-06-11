@@ -926,8 +926,8 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   // Print registers
   fprintf(log_f,
           "A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3u,%3u CYC:%llu",
-          cpu->a, cpu->x, cpu->y, cpu->p, cpu->sp, nes->ppu->y,
-          nes->ppu->x, cpu->cyc);
+          cpu->a, cpu->x, cpu->y, cpu->p, cpu->sp, nes->ppu->scanline,
+          nes->ppu->dot, cpu->cyc);
 
   // Mark where interrupts occur
   if (cpu->nmi_pending) {

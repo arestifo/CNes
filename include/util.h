@@ -3,7 +3,7 @@
 
 #include "nes.h"
 
-// Sets bit n of num to x. x must be 0 or 1, else the result is garbage
+// Sets bit n of num to dot. dot must be 0 or 1, else the result is garbage
 #define SET_BIT(num, n, x) ((num) = (((num) & ~(1 << (n))) | ((x) << (n))))
 #define GET_BIT(num, n) (!!((num) & (1 << (n))))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
