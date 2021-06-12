@@ -89,10 +89,12 @@ typedef struct ppu {
   u16 scanline;                 // Current Y position (current dot)
 
   // Internal PPU positions used when rendering
-  u8 coarse_x;                  // X index of the current tile
-  u8 coarse_y;                  // Y index of the current tile
   u8 fine_x;                    // X offset within the current tile for the current pixel
   u8 fine_y;                    // Y offset within the current tile for the current pixel
+
+  // Scroll offsets
+  u8 scroll_x;                  // X offset into the current nametable
+  u8 scroll_y;
 
   // PPU Flags and metadata
   mirroring_type_t mirroring;   // What time of mirroring the PPU is using
@@ -114,5 +116,8 @@ void ppu_write(nes_t *nes, u16 addr, u8 val);
 void ppu_init(nes_t *nes);
 void ppu_tick(nes_t *nes, window_t *wnd, void *pixels);
 void ppu_destroy(nes_t *nes);
+
+// PPU utility functions
+bool ppu_rendering_enabled(ppu_t *ppu);
 
 #endif

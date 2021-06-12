@@ -5,8 +5,8 @@
 void window_init(window_t *wnd) {
   // Create the main display window
   wnd->disp_window = SDL_CreateWindow("CNES",
-                                      SDL_WINDOWPOS_UNDEFINED,
-                                      SDL_WINDOWPOS_UNDEFINED,
+                                      SDL_WINDOWPOS_CENTERED,
+                                      SDL_WINDOWPOS_CENTERED,
                                       WINDOW_W, WINDOW_H, SDL_WINDOW_RESIZABLE);
   if (!wnd->disp_window)
     printf("window_init: SDL_CreateWindow() failed: %s\n", SDL_GetError());
