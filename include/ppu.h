@@ -93,8 +93,9 @@ typedef struct ppu {
   u8 fine_y;                    // Y offset within the current tile for the current pixel
 
   // Scroll offsets
+  // Applied to the VRAM addr just before frame rendering starts (end of VBlank)
   u8 scroll_x;                  // X offset into the current nametable
-  u8 scroll_y;
+  u8 scroll_y;                  // Y offset into the current nametable
 
   // PPU Flags and metadata
   mirroring_type_t mirroring;   // What time of mirroring the PPU is using

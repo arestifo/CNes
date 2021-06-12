@@ -4,6 +4,7 @@
 #include "nes.h"
 
 // Interface describing a generic mapper
+// TODO: Implement NROM like this
 typedef struct mapper {
   // Function pointers for accessing memory
   // PPU memory

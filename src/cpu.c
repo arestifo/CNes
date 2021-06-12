@@ -1,16 +1,15 @@
-#include "include/cpu.h"
-#include "include/mem.h"
-#include "include/util.h"
-#include "include/cart.h"
-#include "include/ppu.h"
+#include "../include/cpu.h"
+#include "../include/mem.h"
+#include "../include/util.h"
+#include "../include/cart.h"
+#include "../include/args.h"
+#include "../include/ppu.h"
 
 const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 
 void cpu_init(nes_t *nes) {
-  cpu_t *cpu;
-
   // NES power up state
-  cpu = nes->cpu;
+  cpu_t *cpu = nes->cpu;
   cpu->a = 0;
   cpu->x = 0;
   cpu->y = 0;
@@ -31,9 +30,8 @@ void cpu_init(nes_t *nes) {
 
 u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
   u8 low, high;
-  cpu_t *cpu;
 
-  cpu = nes->cpu;
+  cpu_t *cpu = nes->cpu;
   switch (mode) {
     case ABS_IDX_X:
       return addr + cpu->x;
@@ -88,9 +86,8 @@ static u16
 cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
   u8 low, high;
   u16 retval;
-  cpu_t *cpu;
 
-  cpu = nes->cpu;
+  cpu_t *cpu = nes->cpu;
   switch (mode) {
     case ABS:
     case ZP:
@@ -136,9 +133,7 @@ cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
 // I like this method vs. a simple lookup table because this loosely emulates how the 6502
 // internally decodes instructions.
 addrmode_t get_addrmode(u8 opcode) {
-  u8 mode_i;
-
-  mode_i = opcode % 0x20;
+  u8 mode_i = opcode % 0x20;
   if (mode_i == 0x00 || mode_i == 0x09 || mode_i == 0x02) {
     if (opcode == 0x20)  // JSR
       return ABS;
@@ -166,11 +161,10 @@ addrmode_t get_addrmode(u8 opcode) {
 // (it's likely not possible without sub-instruction level emulation)
 // https://wiki.nesdev.com/w/index.php/CPU_interrupts
 static void cpu_interrupt(nes_t *nes, interrupt_t type) {
-  cpu_t *cpu;
-  u16 vec;
-
-  cpu = nes->cpu;
+  cpu_t *cpu = nes->cpu;
   cpu_push16(nes, cpu->pc);
+
+  u16 vec;
   if (type == INTR_BRK) {
     SET_BIT(cpu->p, B_BIT, 1);
     vec = VEC_IRQ;
@@ -229,21 +223,25 @@ void cpu_tick(nes_t *nes) {
   // We have to re-do all instruction fetching here because we don't want to
   // increment cycles
   cpu = nes->cpu;
-#ifdef LOG_OUTPUT
-  u8 debug_opcode;
-  u16 debug_operand;
-  addrmode_t debug_mode;
 
-  debug_opcode = cpu_read8(nes, cpu->pc);
-  debug_mode = get_addrmode(debug_opcode);
-  if (OPERAND_SIZES[debug_mode] == 1)
-    debug_operand = cpu_read8(nes, cpu->pc + 1);
-  else if (OPERAND_SIZES[debug_mode] == 2)
-    debug_operand = cpu_read16(nes, cpu->pc + 1);
-  else  // Just to quiet the compiler
-    debug_operand = 0;
-  dump_cpu(nes, debug_opcode, debug_operand, debug_mode);
-#endif
+  // For now, CPU debugging breaks things TODO: Fix this
+  assert(!nes->args->cpu_log_output);
+
+  if (nes->args->cpu_log_output) {
+    u8 debug_opcode;
+    u16 debug_operand;
+    addrmode_t debug_mode;
+
+    debug_opcode = cpu_read8(nes, cpu->pc);
+    debug_mode = get_addrmode(debug_opcode);
+    if (OPERAND_SIZES[debug_mode] == 1)
+      debug_operand = cpu_read8(nes, cpu->pc + 1);
+    else if (OPERAND_SIZES[debug_mode] == 2)
+      debug_operand = cpu_read16(nes, cpu->pc + 1);
+    else  // Just to quiet the compiler
+      debug_operand = 0;
+    dump_cpu(nes, debug_opcode, debug_operand, debug_mode);
+  }
 
   // Check for interrupts
   if (cpu->irq_pending) {
@@ -837,6 +835,8 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   cpu_t *cpu;
 
   cpu = nes->cpu;
+  FILE *log_f = nes->args->cpu_logf;
+
   fprintf(log_f, "%04X  ", cpu->pc);
   num_operands = OPERAND_SIZES[mode];
   low = operand & 0x00FF;

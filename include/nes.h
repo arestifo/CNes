@@ -11,17 +11,21 @@
 #include "SDL.h"
 #include "types.h"
 
-//#define LOG_OUTPUT
-
 typedef struct cpu cpu_t;
 typedef struct ppu ppu_t;
 typedef struct cart cart_t;
 typedef struct window window_t;
 
+// TODO
+typedef struct args args_t;
+typedef struct mapper mapper_t;
+
 typedef struct nes {
   cpu_t *cpu;
   ppu_t *ppu;
   cart_t *cart;
+  args_t *args;
+  mapper_t *mapper;
 
   // Controller information
   bool controllers_polling;

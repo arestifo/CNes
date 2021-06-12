@@ -1,7 +1,7 @@
-#include "include/mem.h"
-#include "include/ppu.h"
-#include "include/cpu.h"
-#include "include/cart.h"
+#include "../include/mem.h"
+#include "../include/ppu.h"
+#include "../include/cpu.h"
+#include "../include/cart.h"
 
 void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   if (addr >= 0x2000 && addr <= 0x3FFF) {

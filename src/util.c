@@ -1,4 +1,4 @@
-#include "include/util.h"
+#include "../include/util.h"
 
 void *nes_malloc(size_t sz) {
   void *ret;

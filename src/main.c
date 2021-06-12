@@ -1,12 +1,12 @@
-#include "include/nes.h"
-#include "include/util.h"
-#include "include/cpu.h"
-#include "include/ppu.h"
-#include "include/window.h"
+#include "../include/nes.h"
+#include "../include/util.h"
+#include "../include/cpu.h"
+#include "../include/ppu.h"
+#include "../include/window.h"
+#include "../include/args.h"
 
 // Entry point of CNES
 // Initializes everything and begins ROM execution
-FILE *log_f;
 static bool g_shutdown = false;
 
 static void keyboard_input(nes_t *nes, SDL_Keycode sc, bool keydown) {
@@ -52,10 +52,8 @@ int main(int argc, char **argv) {
   nes_t nes;
   window_t window;
   SDL_Event event;
-  char *log_fn;
 
   printf("cnes by Alex Restifo starting\n");
-  log_fn = "../logs/cnes.log";
 
   // Init SDL
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
@@ -63,9 +61,7 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-  // Logging
-  remove(log_fn);
-  log_f = nes_fopen(log_fn, "w");
+
 
   // Read command line arguments
   if (argc != 2) {
@@ -76,6 +72,17 @@ int main(int argc, char **argv) {
   // Initialize the NES and display window
   nes_init(&nes, argv[1]);
   window_init(&window);
+
+  // Logging
+  char *cpu_log_fn = "../logs/cpu.log";
+  char *ppu_log_fn = "../logs/ppu.log";
+  remove(cpu_log_fn);
+  remove(ppu_log_fn);
+  nes.args->cpu_logf = nes_fopen(cpu_log_fn, "w");
+  nes.args->ppu_logf = nes_fopen(ppu_log_fn, "w");
+
+  nes.args->cpu_log_output = false;
+  nes.args->ppu_log_output = true;
 
   // TODO: Make this configurable
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);
@@ -107,8 +114,9 @@ int main(int argc, char **argv) {
 
   // Clean up
   window_destroy(&window);
+  nes_fclose(nes.args->cpu_logf);
+  nes_fclose(nes.args->ppu_logf);
   nes_destroy(&nes);
-  nes_fclose(log_f);
   SDL_Quit();
 
   exit(EXIT_SUCCESS);

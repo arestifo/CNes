@@ -1,8 +1,9 @@
-#include "include/ppu.h"
-#include "include/util.h"
-#include "include/window.h"
-#include "include/cpu.h"
-#include "include/cart.h"
+#include "../include/ppu.h"
+#include "../include/util.h"
+#include "../include/window.h"
+#include "../include/cpu.h"
+#include "../include/cart.h"
+#include "../include/args.h"
 
 static bool write_toggle = false;
 static u16 ppu_decode_addr(nes_t *nes, u16 addr);
@@ -30,7 +31,8 @@ static void ppu_palette_init(nes_t *nes, char *palette_fn) {
 
 bool ppu_rendering_enabled(ppu_t *ppu) {
   return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) &&
-         GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
+         GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT) &&
+         !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT);
 }
 
 // Palette from http://www.firebrandx.com/nespalette.html
@@ -189,7 +191,14 @@ static u32 ppu_render_pixel(nes_t *nes) {
     // Calculate an index into the background palette from the palette and attribute color bits
     u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2));
 
+    if (nes->args->ppu_log_output) {
+      fprintf(nes->args->ppu_logf,
+              "(%d, %d) = coarse_x=%d coarse_y=%d fine_x=%d fine_y=%d vram=$%04X\n", cur_y, cur_x,
+              coarse_x, coarse_y, ppu->fine_x, ppu->fine_y, ppu->vram_addr);
+    }
+
     // Get an index into the system palette from the background palette index
+//    usleep(1000);
     bgr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
   }
 
@@ -204,7 +213,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
     // be shown on that scanline
     // We count down from 7..0 because that is effectively how the NES does it
     s8 active_spr_i = -1;
-    for (int i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
+    for (s8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
       sprite_t cur_spr = ppu->sec_oam[i];
       if (cur_spr.data.tile_idx) {
         if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8)
@@ -304,6 +313,30 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       ppu->nmi_occurred = false;
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 0);
+
+      // Set PPU scroll position
+      // Get new coarse x,y and fine x,y from scroll position
+      u8 new_coarse_x = ppu->scroll_x / 8;
+      u8 new_coarse_y = ppu->scroll_y / 8;
+      u8 new_fine_x = ppu->scroll_x % 8;
+      u8 new_fine_y = ppu->scroll_y % 8;
+
+      // Copy the x,y scroll values into VRAM
+      // The effective VRAM addr is a 12-bit value:
+      // NN YYYYY XXXXX where N = nametable select bit, Y = coarse Y bit, X = coarse X bit
+      // **** Copy X scroll values ****
+      ppu->vram_addr &= ~0x1F;  // Clear coarse X
+      ppu->vram_addr |= new_coarse_x & 0x1F;  // TODO: Test if the AND is unnecessary
+      ppu->fine_x = new_fine_x;
+
+      // **** Copy Y scroll values ****
+      ppu->vram_addr &= ~(0x1F << 5);
+      ppu->vram_addr |= (new_coarse_y & 0x1F) << 5;
+      ppu->fine_y = new_fine_y;
+
+      // TODO: Do I need to copy nametable bits here too?
+      ppu->vram_addr &= ~(3 << 10);
+      ppu->vram_addr |= ((ppu->regs[PPUCTRL] & 3) << 10);
     } else if (ppu->dot >= 257 && ppu->dot <= 320) {
       ppu->regs[OAMADDR] = 0x00;
     }
@@ -312,7 +345,6 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     // Cycle 0 on all visible scanlines is an idle cycle, but we will use it to get the
     // sprites that should be rendered on this scanline
     if (ppu->dot == 0) {
-//      ppu->vram_addr &= ~0x1F;
       ppu_fill_sec_oam(nes);
     } else if (ppu->dot >= 1 && ppu->dot <= 256) {
       // Render a visible pixel to the framebuffer
@@ -320,7 +352,6 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = pixel;
 
       // Increment fine/coarse y at the end of every scanline
-//      printf("fine_x=%d fine_y=%d\n", ppu->fine_x, ppu->fine_y);
       ppu_increment_scroll_x(ppu);
       if (ppu->dot == 256)
         ppu_increment_scroll_y(ppu);
@@ -389,17 +420,18 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
 
   switch (reg) {
     case PPUSCROLL:  // $2005
-      if (!write_toggle) {
-        // Write the fine scroll x (coarse is calculated in render_pixel)
-        ppu->fine_x = val % 8;
-      } else {
-        // Write the fine scroll y
-        ppu->fine_y = val % 8;
-      }
+      if (!write_toggle)
+        ppu->scroll_x = val;
+      else
+        ppu->scroll_y = val;
+
       write_toggle ^= true;
 
-//      static int i = 0;
-//      printf("ppu_write: i=%d PPUSCROLL write $%02X\n", i++, val);
+      static int i = 0;
+      if (nes->args->ppu_log_output) {
+        fprintf(nes->args->ppu_logf, "ppu_write: i=%d w=%d PPUSCROLL write $%02X\n", i++,
+                write_toggle, val);
+      }
 
       break;
     case PPUADDR:  // $2006
@@ -412,10 +444,19 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       if (write_toggle)
         ppu->vram_addr = temp_vram_addr;
 
+      if (nes->args->ppu_log_output) {
+        fprintf(nes->args->ppu_logf, "ppu_write: i=%d w=%d PPUADDR write $%02X\n", i++,
+                write_toggle, val);
+      }
+
       write_toggle ^= true;  // Toggle ppuaddr_written
       break;
     case PPUCTRL:
       ppu->regs[PPUCTRL] = val;
+
+      if (nes->args->ppu_log_output) {
+        fprintf(nes->args->ppu_logf, "ppu_write: i=%d PPUCTRL write $%02X\n", i++, val);
+      }
 
       // TODO: Support 8x16 sprites (high priority)
       if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT))

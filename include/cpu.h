@@ -85,8 +85,6 @@ typedef enum interrupt {
   INTR_NMI, INTR_IRQ, INTR_BRK
 } interrupt_t;
 
-extern FILE *log_f;
-
 // Gets addressing mode from opcode.
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
