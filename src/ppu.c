@@ -314,29 +314,29 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 0);
 
-      // Set PPU scroll position
-      // Get new coarse x,y and fine x,y from scroll position
-      u8 new_coarse_x = ppu->scroll_x / 8;
-      u8 new_coarse_y = ppu->scroll_y / 8;
-      u8 new_fine_x = ppu->scroll_x % 8;
-      u8 new_fine_y = ppu->scroll_y % 8;
-
-      // Copy the x,y scroll values into VRAM
-      // The effective VRAM addr is a 12-bit value:
-      // NN YYYYY XXXXX where N = nametable select bit, Y = coarse Y bit, X = coarse X bit
-      // **** Copy X scroll values ****
-      ppu->vram_addr &= ~0x1F;  // Clear coarse X
-      ppu->vram_addr |= new_coarse_x & 0x1F;  // TODO: Test if the AND is unnecessary
-      ppu->fine_x = new_fine_x;
-
-      // **** Copy Y scroll values ****
-      ppu->vram_addr &= ~(0x1F << 5);
-      ppu->vram_addr |= (new_coarse_y & 0x1F) << 5;
-      ppu->fine_y = new_fine_y;
-
-      // TODO: Do I need to copy nametable bits here too?
-      ppu->vram_addr &= ~(3 << 10);
-      ppu->vram_addr |= ((ppu->regs[PPUCTRL] & 3) << 10);
+//      // Set PPU scroll position
+//      // Get new coarse x,y and fine x,y from scroll position
+//      u8 new_coarse_x = ppu->scroll_x / 8;
+//      u8 new_coarse_y = ppu->scroll_y / 8;
+//      u8 new_fine_x = ppu->scroll_x % 8;
+//      u8 new_fine_y = ppu->scroll_y % 8;
+//
+//      // Copy the x,y scroll values into VRAM
+//      // The effective VRAM addr is a 12-bit value:
+//      // NN YYYYY XXXXX where N = nametable select bit, Y = coarse Y bit, X = coarse X bit
+//      // **** Copy X scroll values ****
+//      ppu->vram_addr &= ~0x1F;  // Clear coarse X
+//      ppu->vram_addr |= new_coarse_x & 0x1F;  // TODO: Test if the AND is unnecessary
+//      ppu->fine_x = new_fine_x;
+//
+//      // **** Copy Y scroll values ****
+//      ppu->vram_addr &= ~(0x1F << 5);
+//      ppu->vram_addr |= (new_coarse_y & 0x1F) << 5;
+//      ppu->fine_y = new_fine_y;
+//
+//      // TODO: Do I need to copy nametable bits here too?
+//      ppu->vram_addr &= ~(3 << 10);
+//      ppu->vram_addr |= ((ppu->regs[PPUCTRL] & 3) << 10);
     } else if (ppu->dot >= 257 && ppu->dot <= 320) {
       ppu->regs[OAMADDR] = 0x00;
     }
@@ -352,9 +352,9 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = pixel;
 
       // Increment fine/coarse y at the end of every scanline
-      ppu_increment_scroll_x(ppu);
-      if (ppu->dot == 256)
-        ppu_increment_scroll_y(ppu);
+//      ppu_increment_scroll_x(ppu);
+//      if (ppu->dot == 256)
+//        ppu_increment_scroll_y(ppu);
 
     } else if (ppu->dot >= 258 && ppu->dot <= 320) {
       // Set OAMADDR to 0
