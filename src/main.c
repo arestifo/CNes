@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
   nes.args->ppu_logf = nes_fopen(ppu_log_fn, "w");
 
   nes.args->cpu_log_output = false;
-  nes.args->ppu_log_output = true;
+  nes.args->ppu_log_output = false;
 
   // TODO: Make this configurable
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);
