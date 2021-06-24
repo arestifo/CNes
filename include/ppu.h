@@ -84,22 +84,19 @@ typedef struct ppu {
 
   // PPU scanline positions
   u64 frameno;                  // Current PPU frame
-  u16 vram_addr;                // Current VRAM address
+  u16 vram_addr;                // Current VRAM address (loopy_v register)
+  u16 temp_addr;                // Current temporary VRAM address (loopy_t register)
   u16 dot;                      // Current X position (dot within current scanline)
   u16 scanline;                 // Current Y position (current dot)
 
   // Internal PPU positions used when rendering
   u8 fine_x;                    // X offset within the current tile for the current pixel
-  u8 fine_y;                    // Y offset within the current tile for the current pixel
-
-  // Scroll offsets
-  // Applied to the VRAM addr just before frame rendering starts (end of VBlank)
-  u8 scroll_x;                  // X offset into the current nametable
-  u8 scroll_y;                  // Y offset into the current nametable
+//  u8 fine_y;                    // Y offset within the current tile for the current pixel
 
   // PPU Flags and metadata
   mirroring_type_t mirroring;   // What time of mirroring the PPU is using
   bool nmi_occurred;            // Whether the PPU is currently generating NMIs or not
+  bool is_even_frame;           // Is the PPU rendering an odd or even frame
 
   u64 ticks;                    // Number of PPU cycles
   u32 palette[PALETTE_SZ];      // System-wide palette
