@@ -143,8 +143,14 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
   u8 cur_x = ppu->dot - 1;
   u8 cur_y = ppu->scanline;
 
-  assert(cur_x >= 0 && cur_x <= 255);
-  assert(cur_y >= 0 && cur_y <= 239);
+//  if (!(cur_x >= 0 && cur_x <= 255)) {
+//    printf("curx=%d\n", cur_x);
+//    exit(EXIT_FAILURE);
+//  }
+//  if (!(cur_y >= 0 && cur_y <= 239)) {
+//    printf("cury=%d\n", cur_y);
+//    exit(EXIT_FAILURE);
+//  }
 
   // **************** Background rendering ****************
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
@@ -202,7 +208,7 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
     }
 
     // Get an index into the system palette from the background palette index
-//    usleep(1000);
+//    usleep(10);
     bgr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
   }
 
@@ -256,6 +262,7 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
   // **************** Pixel multiplexer/display ****************
   u32 final_pixel;
   u8 uni_bgr_color_idx = ppu_read(nes, PALETTE_BASE);
+
   if (!bgr_color_idx && !spr_color_idx)
     final_pixel = ppu_get_palette_color(nes, uni_bgr_color_idx);
   else if (!bgr_color_idx)
@@ -284,15 +291,13 @@ static void ppu_fill_sec_oam(nes_t *nes) {
   memset(ppu->sec_oam, 0, SEC_OAM_NUM_SPR * sizeof *ppu->sec_oam);
 
   // Search through OAM to find sprites that are in range
-  const u8 HEIGHT_OFFSET = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 16 : 8;
-  u8 sec_oam_i = 0;
-  u16 cur_y = ppu->scanline - 1;
-  for (u8 i = 0; i < 64 && sec_oam_i < 8; i++) {
+  const u8 SPR_HEIGHT = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 16 : 8;
+  for (u8 i = 0, sec_oam_i = 0; i < 64 && sec_oam_i < 8; i++) {
     sprite_t cur_spr = ppu->oam[i];
 
     // Is the sprite in range, and does it already exist in the secondary OAM?
     if (cur_spr.data.tile_idx) {
-      if (cur_y >= cur_spr.data.y_pos && cur_y < cur_spr.data.y_pos + HEIGHT_OFFSET) {
+      if (ppu->scanline >= cur_spr.data.y_pos && ppu->scanline < cur_spr.data.y_pos + SPR_HEIGHT) {
         ppu->sec_oam[sec_oam_i++] = cur_spr;
       }
     }
@@ -301,97 +306,13 @@ static void ppu_fill_sec_oam(nes_t *nes) {
 
 // Renders a single pixel at the current PPU position
 // Also controls timing and issues NMIs to the CPU on VBlank
-//void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
-//  // TODO: Even and odd frames have slightly different behavior with idle cycles
-//  ppu_t *ppu = nes->ppu;
-//
-//  if (ppu->scanline == 0) {
-//    // Pre-render scanline
-//    // Clear NMI flag on the second dot of the pre-render scanline
-//    if (ppu->dot == 1) {
-//      // All visible scanlines have been rendered, frame is ready to be displayed
-//      wnd->frame_ready = true;
-//      ppu->frameno++;
-//      ppu->nmi_occurred = false;
-//      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
-//      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 0);
-//
-//      // Set PPU scroll position
-//      // Get new coarse x,y and fine x,y from scroll position
-//
-//    }
-//    if (ppu->dot >= 257 && ppu->dot <= 320) {
-//      ppu->regs[OAMADDR] = 0x00;
-//    }
-//    if (ppu->dot >= 280 && ppu->dot <= 304) {
-//      // Copy vertical position from temp to vram
-//      // Copy coarse y
-//      ppu->vram_addr &= ~(0x1F << 5);
-//      ppu->vram_addr |= (ppu->temp_addr & (0x1F << 5));
-//
-//      // Copy fine y and vertical nametable bit
-//      ppu->vram_addr ^= ~(0xFF << 11);
-//      ppu->vram_addr |= (ppu->temp_addr & (0xFF << 11));
-//    }
-//  } else if (ppu->scanline >= 1 && ppu->scanline <= 240) {
-//    // Visible scanlines
-//    // Cycle 0 on all visible scanlines is an idle cycle, but we will use it to get the
-//    // sprites that should be rendered on this scanline
-//    if (ppu->dot == 0) {
-//      ppu_fill_sec_oam(nes);
-//    } else if (ppu->dot >= 1 && ppu->dot <= 256) {
-//      // Render a visible pixel to the framebuffer
-////      u32 pixel = ppu_render_pixel(nes);
-////      ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = pixel;
-//      ppu_render_pixel(nes, pixels);
-//
-//    } else if (ppu->dot >= 258 && ppu->dot <= 320) {
-//      // Set OAMADDR to 0
-//      ppu->regs[OAMADDR] = 0x00;
-//    }
-//  } else if (ppu->scanline == 241) {
-//    // Post-render scanline
-//
-//  } else if (ppu->scanline >= 242 && ppu->scanline <= 261) {
-//    // VBlank scanlines
-//    // Issue NMI at the second dot (dot=1) of the first VBlank scanline
-//    if (ppu->scanline == 242 && ppu->dot == 1) {
-//      ppu->nmi_occurred = true;
-//      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 1);
-//
-//      if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_NMI_ENABLE_BIT))
-//        nes->cpu->nmi_pending = true;
-//    }
-//  }
-//
-//  if (ppu->dot == 256)
-//    ppu_increment_scroll_y(ppu);
-//  if (ppu->dot == 257) {
-//    if (ppu_rendering_enabled(ppu)) {
-//      // Copy coarse x from temp to vram
-//      ppu->vram_addr &= ~0x1F;
-//      ppu->vram_addr |= (ppu->temp_addr & 0x1F);
-//
-//      // Copy horizontal nametable bit from temp to vram
-//      ppu->vram_addr &= ~(1 << 10);
-//      ppu->vram_addr |= (ppu->temp_addr & (1 << 10));
-//    }
-//  }
-//
-//  if (ppu->dot >= 328 || ppu->dot <= 256)
-//    ppu_increment_scroll_x(ppu);
-//
-//  // Increment PPU position
-//  ppu->ticks++;
-//  ppu->dot = ppu->ticks % DOTS_PER_SCANLINE;
-//  ppu->scanline = (ppu->ticks / DOTS_PER_SCANLINE) % NUM_SCANLINES;
-//}
-
 void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
   // TODO: Even and odd frames have slightly different behavior with idle cycles
   ppu_t *ppu = nes->ppu;
 
-  if (ppu->scanline == 261) {
+//  const u16 PRERENDER_LINE = ppu->frameno & 1 ? 0 : 261;
+  const u16 PRERENDER_LINE = 261;
+  if (ppu->scanline == PRERENDER_LINE) {
     // Pre-render scanline
     // Clear NMI flag on the second dot of the pre-render scanline
     if (ppu->dot == 1) {
@@ -406,14 +327,16 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       ppu->regs[OAMADDR] = 0x00;
     }
     if (ppu->dot >= 280 && ppu->dot <= 304) {
-      // Copy vertical position from temp to vram
-      // Copy coarse y
-      ppu->vram_addr &= ~(0x1F << 5);
-      ppu->vram_addr |= (ppu->temp_addr & (0x1F << 5));
+      // **** Copy horizontal T components to V ****
+      if (ppu_rendering_enabled(ppu)) {
+        // Coarse y
+        ppu->vram_addr &= ~(0x1F << 5);
+        ppu->vram_addr |= (ppu->temp_addr & (0x1F << 5));
 
-      // Copy fine y and vertical nametable bit
-      ppu->vram_addr &= ~(0xFF << 11);
-      ppu->vram_addr |= (ppu->temp_addr & (0xFF << 11));
+        // Coarse y and fine y
+        ppu->vram_addr &= ~(0xF << 11);
+        ppu->vram_addr |= (ppu->temp_addr & (0xF << 11));
+      }
     }
   } else if (ppu->scanline >= 0 && ppu->scanline <= 239) {
     // Visible scanlines
@@ -424,7 +347,6 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     } else if (ppu->dot >= 1 && ppu->dot <= 256) {
       // Render a visible pixel to the framebuffer
       ppu_render_pixel(nes, pixels);
-
     } else if (ppu->dot >= 258 && ppu->dot <= 320) {
       // Set OAMADDR to 0
       ppu->regs[OAMADDR] = 0x00;
@@ -444,12 +366,13 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     }
   }
 
-  if ((ppu->scanline >= 0 && ppu->scanline <= 239) || ppu->scanline == 261) {
-    if ((ppu->dot >= 1 && ppu->dot <= 256) || (ppu->dot >= 321 && ppu->dot <= 340))
+  if (ppu->scanline >= 0 && ppu->scanline <= 239) {
+    if (ppu->dot >= 1 && ppu->dot <= 256)
       ppu_increment_scroll_x(ppu);
     if (ppu->dot == 256)
       ppu_increment_scroll_y(ppu);
     if (ppu->dot == 257) {
+      // **** Copy horizontal T components to V ****
       if (ppu_rendering_enabled(ppu)) {
         // Copy coarse x from temp to vram
         ppu->vram_addr &= ~0x1F;
@@ -458,6 +381,7 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
         // Copy horizontal nametable bit from temp to vram
         ppu->vram_addr &= ~(1 << 10);
         ppu->vram_addr |= (ppu->temp_addr & (1 << 10));
+        ppu->fine_x = ppu->scroll_x & 7;
       }
     }
   }
@@ -511,6 +435,7 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
         ppu->temp_addr &= ~0x1F;
         ppu->temp_addr |= val >> 3;
         ppu->fine_x = val & 7;
+        ppu->scroll_x = val;
       } else {
         // Second write, copy coarse/fine y
         ppu->temp_addr &= ~(0x1F << 5);

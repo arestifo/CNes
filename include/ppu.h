@@ -91,6 +91,7 @@ typedef struct ppu {
 
   // Internal PPU positions used when rendering
   u8 fine_x;                    // X offset within the current tile for the current pixel
+  u8 scroll_x;                  // TODO: This shouldn't be necessary
 
   // PPU Flags and metadata
   mirroring_type_t mirroring;   // What time of mirroring the PPU is using

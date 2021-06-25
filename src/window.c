@@ -18,6 +18,7 @@ void window_init(window_t *wnd) {
     printf("window_init: SDL_GetRenderer() failed: %s\n", SDL_GetError());
 
   // Create texture to render the screen to
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
   wnd->texture = SDL_CreateTexture(wnd->renderer, SDL_PIXELFORMAT_ARGB32,
                                    SDL_TEXTUREACCESS_STREAMING, WINDOW_W, WINDOW_H);
   if (!wnd->texture)
