@@ -46,7 +46,7 @@ u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
       return (addr + cpu->y) & 0xFF;
     case REL:
       // Fortunately, the 6502 uses two's complement for signed numbers, so casting to s8 works perfectly
-      return cpu->pc + ((s8) addr);
+      return cpu->pc + (s8) addr;
     case ABS_IND:
       // The only instruction to use this addrmode_t is JMP, which has a bug
       // where the LSB is read correctly but the MSB is not read from across

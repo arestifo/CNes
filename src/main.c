@@ -61,8 +61,6 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-
-
   // Read command line arguments
   if (argc != 2) {
     printf("%s: invalid command line arguments.\n", argv[0]);
@@ -87,7 +85,6 @@ int main(int argc, char **argv) {
   // TODO: Make this configurable
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);
 
-  // Update the window 60 times per second
   while (!g_shutdown) {
     // Main event polling loop
     // Also update the keyboard array so we can get input
@@ -107,9 +104,6 @@ int main(int argc, char **argv) {
 
     // Run the PPU & CPU until we have a frame ready to render to the screen
     window_update(&window, &nes);
-
-    // Delay for enough time to get our desired FPS
-//    printf("main: frameno=%llu\n", nes.ppu->frameno);
   }
 
   // Clean up

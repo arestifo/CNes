@@ -1,4 +1,9 @@
-//
-// Created by Alex Restifo on 0625..21.
-//
+#include "../include/apu.h"
 
+void apu_init(nes_t *nes) {
+
+}
+
+void apu_destroy(nes_t *nes) {
+
+}

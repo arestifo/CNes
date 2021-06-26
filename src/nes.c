@@ -5,15 +5,15 @@
 #include "../include/cart.h"
 #include "../include/args.h"
 #include "../include/mapper.h"
+#include "../include/apu.h"
 
 void nes_init(nes_t *nes, char *cart_fn) {
-//  nes->cpu = nes_malloc(sizeof *nes->cpu);
-//  nes->ppu = nes_malloc(sizeof *nes->ppu);
-  nes->cpu = nes_calloc(1, sizeof *nes->cpu);
-  nes->ppu = nes_calloc(1, sizeof *nes->ppu);
-  nes->cart = nes_malloc(sizeof *nes->cart);
-  nes->args = nes_malloc(sizeof *nes->args);
+  nes->cpu    = nes_malloc(sizeof *nes->cpu);
+  nes->ppu    = nes_malloc(sizeof *nes->ppu);
+  nes->cart   = nes_malloc(sizeof *nes->cart);
+  nes->args   = nes_malloc(sizeof *nes->args);
   nes->mapper = nes_malloc(sizeof *nes->mapper);
+  nes->apu    = nes_malloc(sizeof *nes->apu);
 
   nes->ctrl1_sr = 0;
   nes->ctrl1_sr_buf = 0;
@@ -21,6 +21,7 @@ void nes_init(nes_t *nes, char *cart_fn) {
   cart_init(nes->cart, cart_fn);
   cpu_init(nes);
   ppu_init(nes);
+  apu_init(nes);
 }
 
 void nes_destroy(nes_t *nes) {
@@ -32,4 +33,5 @@ void nes_destroy(nes_t *nes) {
   free(nes->cart);
   free(nes->args);
   free(nes->mapper);
+  free(nes->apu);
 }

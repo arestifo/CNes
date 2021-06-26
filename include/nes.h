@@ -15,10 +15,9 @@ typedef struct cpu cpu_t;
 typedef struct ppu ppu_t;
 typedef struct cart cart_t;
 typedef struct window window_t;
-
-// TODO
 typedef struct args args_t;
 typedef struct mapper mapper_t;
+typedef struct apu apu_t;
 
 typedef struct nes {
   cpu_t *cpu;
@@ -26,6 +25,7 @@ typedef struct nes {
   cart_t *cart;
   args_t *args;
   mapper_t *mapper;
+  apu_t *apu;
 
   // Controller information
   bool controllers_polling;
@@ -35,4 +35,5 @@ typedef struct nes {
 
 void nes_init(nes_t *nes, char *cart_fn);
 void nes_destroy(nes_t *nes);
+
 #endif

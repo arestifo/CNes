@@ -30,9 +30,6 @@ static void ppu_palette_init(nes_t *nes, char *palette_fn) {
 }
 
 bool ppu_rendering_enabled(ppu_t *ppu) {
-//  return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) &&
-//         GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT) &&
-//         !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT);
   return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) &&
          GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
 }
@@ -122,7 +119,7 @@ static inline void ppu_increment_scroll_x(ppu_t *ppu) {
 // Renders a single pixel and returns it as an ARGB32 value. Runs during every PPU cycle.
 // pixels is an array of ARGB32 values representing the SDL framebuffer we are drawing to
 // Information from https://wiki.nesdev.com/w/index.php/PPU_scrolling
-static void ppu_render_pixel(nes_t *nes, void *pixels) {
+static u32 ppu_render_pixel(nes_t *nes) {
   // Rendering a pixel consists of rendering both background and sprites
   ppu_t *ppu = nes->ppu;
 
@@ -142,15 +139,6 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
 
   u8 cur_x = ppu->dot - 1;
   u8 cur_y = ppu->scanline;
-
-//  if (!(cur_x >= 0 && cur_x <= 255)) {
-//    printf("curx=%d\n", cur_x);
-//    exit(EXIT_FAILURE);
-//  }
-//  if (!(cur_y >= 0 && cur_y <= 239)) {
-//    printf("cury=%d\n", cur_y);
-//    exit(EXIT_FAILURE);
-//  }
 
   // **************** Background rendering ****************
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
@@ -208,10 +196,8 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
     }
 
     // Get an index into the system palette from the background palette index
-//    usleep(10);
     bgr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
   }
-
   // ************** End background rendering **************
 
   // ****************** Sprite rendering ******************
@@ -242,7 +228,7 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
 
       // **** Get two pattern table sprite bytes ****
       u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
-      u16 pt_addr = pt_base + (active_spr.data.tile_idx * 16) + spr_fine_y;
+      u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + spr_fine_y;
 
       u8 pt_val_lo = ppu_read(nes, pt_addr);
       u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
@@ -279,7 +265,8 @@ static void ppu_render_pixel(nes_t *nes, void *pixels) {
                                    : ppu_get_palette_color(nes, bgr_color_idx);
   }
 
-  ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = final_pixel;
+//  ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = final_pixel;
+  return final_pixel;
 }
 
 // Does a linear search through OAM to find up to 8 sprites to render for the current scanline
@@ -310,12 +297,42 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
   // TODO: Even and odd frames have slightly different behavior with idle cycles
   ppu_t *ppu = nes->ppu;
 
-//  const u16 PRERENDER_LINE = ppu->frameno & 1 ? 0 : 261;
   const u16 PRERENDER_LINE = 261;
-  if (ppu->scanline == PRERENDER_LINE) {
+  const u16 SCANLINE = ppu->scanline;
+  const u16 DOT = ppu->dot;
+
+  if (SCANLINE >= 0 && SCANLINE <= 239) {
+    // Visible scanlines
+    // Cycle 0 on all visible scanlines is an idle cycle, but we will use it to get the
+    // sprites that should be rendered on this scanline
+    if (DOT == 0) {
+      ppu_fill_sec_oam(nes);
+    } else if (DOT >= 1 && DOT <= 256) {
+      // Render a visible pixel to the framebuffer
+      u32 pixel = ppu_render_pixel(nes);
+
+      ((u32 *) pixels)[SCANLINE * WINDOW_W + DOT - 1] = pixel;
+    } else if (DOT >= 258 && DOT <= 320) {
+      // Set OAMADDR to 0
+      ppu->regs[OAMADDR] = 0x00;
+    }
+  } else if (SCANLINE == 240) {
+    // Post-render scanline
+
+  } else if (SCANLINE >= 241 && SCANLINE <= 260) {
+    // VBlank scanlines
+    // Issue NMI at the second dot (dot=1) of the first VBlank scanline
+    if (SCANLINE == 241 && DOT == 1) {
+      ppu->nmi_occurred = true;
+      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 1);
+
+      if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_NMI_ENABLE_BIT))
+        nes->cpu->nmi_pending = true;
+    }
+  } else if (SCANLINE == PRERENDER_LINE) {
     // Pre-render scanline
     // Clear NMI flag on the second dot of the pre-render scanline
-    if (ppu->dot == 1) {
+    if (DOT == 1) {
       // All visible scanlines have been rendered, frame is ready to be displayed
       wnd->frame_ready = true;
       ppu->frameno++;
@@ -323,10 +340,10 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 0);
     }
-    if (ppu->dot >= 257 && ppu->dot <= 320) {
+    if (DOT >= 257 && DOT <= 320) {
       ppu->regs[OAMADDR] = 0x00;
     }
-    if (ppu->dot >= 280 && ppu->dot <= 304) {
+    if (DOT >= 280 && DOT <= 304) {
       // **** Copy horizontal T components to V ****
       if (ppu_rendering_enabled(ppu)) {
         // Coarse y
@@ -338,40 +355,15 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
         ppu->vram_addr |= (ppu->temp_addr & (0xF << 11));
       }
     }
-  } else if (ppu->scanline >= 0 && ppu->scanline <= 239) {
-    // Visible scanlines
-    // Cycle 0 on all visible scanlines is an idle cycle, but we will use it to get the
-    // sprites that should be rendered on this scanline
-    if (ppu->dot == 0) {
-      ppu_fill_sec_oam(nes);
-    } else if (ppu->dot >= 1 && ppu->dot <= 256) {
-      // Render a visible pixel to the framebuffer
-      ppu_render_pixel(nes, pixels);
-    } else if (ppu->dot >= 258 && ppu->dot <= 320) {
-      // Set OAMADDR to 0
-      ppu->regs[OAMADDR] = 0x00;
-    }
-  } else if (ppu->scanline == 240) {
-    // Post-render scanline
-
-  } else if (ppu->scanline >= 241 && ppu->scanline <= 260) {
-    // VBlank scanlines
-    // Issue NMI at the second dot (dot=1) of the first VBlank scanline
-    if (ppu->scanline == 241 && ppu->dot == 1) {
-      ppu->nmi_occurred = true;
-      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 1);
-
-      if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_NMI_ENABLE_BIT))
-        nes->cpu->nmi_pending = true;
-    }
   }
 
-  if (ppu->scanline >= 0 && ppu->scanline <= 239) {
-    if (ppu->dot >= 1 && ppu->dot <= 256)
+  // **** V/T updates and scrolling ****
+  if (SCANLINE >= 0 && SCANLINE <= 239) {
+    if (DOT >= 1 && DOT <= 256)
       ppu_increment_scroll_x(ppu);
-    if (ppu->dot == 256)
+    if (DOT == 256)
       ppu_increment_scroll_y(ppu);
-    if (ppu->dot == 257) {
+    if (DOT == 257) {
       // **** Copy horizontal T components to V ****
       if (ppu_rendering_enabled(ppu)) {
         // Copy coarse x from temp to vram

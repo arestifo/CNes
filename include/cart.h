@@ -32,4 +32,5 @@ typedef struct cart {
 void cart_init(cart_t *cart, char *cart_fn);
 void cart_destroy(cart_t *cart);
 u8 get_mapper(cart_t *cart);
-#endif  // CNES_CART_H
+
+#endif

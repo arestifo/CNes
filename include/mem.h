@@ -15,4 +15,5 @@ void cpu_push8(nes_t *nes, u8 val);
 void cpu_push16(nes_t *nes, u16 val);
 u8   cpu_pop8(nes_t *nes);
 u16  cpu_pop16(nes_t *nes);
+
 #endif

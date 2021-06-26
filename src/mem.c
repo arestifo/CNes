@@ -13,7 +13,6 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
     } else {
       nes->controllers_polling = false;
     }
-//    printf("cpu_write8: controller 1 port written=%d cyc=%llu\n", val & 1, nes->cpu->cyc);
   } else if (addr == OAM_DMA_ADDR) {
     // Performs CPU -> PPU OAM DMA. Suspends the CPU for 513 or 514 cycles
     cpu_oam_dma(nes, val << 8);
@@ -34,13 +33,12 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     // PPU registers ($2000-$2007) are mirrored from $2008-$3FFF
     return ppu_reg_read(nes, addr % 8);
   } else if (addr >= 0x4000 && addr <= 0x4015) {
-    // TODO: APU registers and PPU OAM DMA
+
   } else if (addr == CONTROLLER1_PORT) {
     retval = nes->ctrl1_sr;
 
     nes->ctrl1_sr >>= 1;
 
-//    printf("ticks=%llu retval=$%02X\n", cpu->cyc, (retval & 1) | 0x40);
     return (retval & 1) | 0x40;
   } else if (addr == CONTROLLER2_PORT) {
     // TODO Controller 2 reads (low priority)

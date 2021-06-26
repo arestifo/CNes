@@ -41,7 +41,6 @@ void window_update(window_t *wnd, nes_t *nes) {
       ppu_tick(nes, wnd, pixels);
     }
 
-    // TODO: Decrement APU timers here
   }
 
   // Draw the screen texture to the screen
