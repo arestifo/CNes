@@ -29,7 +29,7 @@ static void ppu_palette_init(nes_t *nes, char *palette_fn) {
   SDL_FreeFormat(pixel_fmt);
 }
 
-bool ppu_rendering_enabled(ppu_t *ppu) {
+inline bool ppu_rendering_enabled(ppu_t *ppu) {
   return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) &&
          GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
 }
@@ -209,12 +209,11 @@ static u32 ppu_render_pixel(nes_t *nes) {
     // be shown on that scanline
     // We count down from 7..0 because that is effectively how the NES does it
     s8 active_spr_i = -1;
-    for (s8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
+    for (s8 i = 0; i < SEC_OAM_NUM_SPR; i++) {
       sprite_t cur_spr = ppu->sec_oam[i];
-      if (cur_spr.data.tile_idx) {
+      if (cur_spr.data.tile_idx)
         if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8)
           active_spr_i = i;
-      }
     }
 
     if (active_spr_i >= 0) {
@@ -227,8 +226,9 @@ static u32 ppu_render_pixel(nes_t *nes) {
       u8 pixel_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
 
       // **** Get two pattern table sprite bytes ****
+      u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
       u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
-      u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + spr_fine_y;
+      u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
 
       u8 pt_val_lo = ppu_read(nes, pt_addr);
       u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
@@ -265,7 +265,6 @@ static u32 ppu_render_pixel(nes_t *nes) {
                                    : ppu_get_palette_color(nes, bgr_color_idx);
   }
 
-//  ((u32 *) pixels)[(cur_y * WINDOW_W) + cur_x] = final_pixel;
   return final_pixel;
 }
 
@@ -296,6 +295,7 @@ static void ppu_fill_sec_oam(nes_t *nes) {
 void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
   // TODO: Even and odd frames have slightly different behavior with idle cycles
   ppu_t *ppu = nes->ppu;
+  u32 *frame_buf = (u32 *) pixels;
 
   const u16 PRERENDER_LINE = 261;
   const u16 SCANLINE = ppu->scanline;
@@ -308,17 +308,15 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     if (DOT == 0) {
       ppu_fill_sec_oam(nes);
     } else if (DOT >= 1 && DOT <= 256) {
-      // Render a visible pixel to the framebuffer
+      // We're in the visible section of rendering, so render a pixel
       u32 pixel = ppu_render_pixel(nes);
 
-      ((u32 *) pixels)[SCANLINE * WINDOW_W + DOT - 1] = pixel;
+      // ... then put it in the framebuffer
+      frame_buf[SCANLINE * WINDOW_W + DOT - 1] = pixel;
     } else if (DOT >= 258 && DOT <= 320) {
       // Set OAMADDR to 0
       ppu->regs[OAMADDR] = 0x00;
     }
-  } else if (SCANLINE == 240) {
-    // Post-render scanline
-
   } else if (SCANLINE >= 241 && SCANLINE <= 260) {
     // VBlank scanlines
     // Issue NMI at the second dot (dot=1) of the first VBlank scanline

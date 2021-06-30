@@ -21,11 +21,13 @@ void nes_init(nes_t *nes, char *cart_fn) {
   cart_init(nes->cart, cart_fn);
   cpu_init(nes);
   ppu_init(nes);
-  apu_init(nes);
+  apu_init(nes, 44100, 512);
 }
 
 void nes_destroy(nes_t *nes) {
+  cpu_destroy(nes);
   ppu_destroy(nes);
+  apu_destroy(nes);
   cart_destroy(nes->cart);
 
   free(nes->cpu);

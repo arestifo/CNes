@@ -5,10 +5,6 @@
 #include "../include/window.h"
 #include "../include/args.h"
 
-// Entry point of CNES
-// Initializes everything and begins ROM execution
-static bool g_shutdown = false;
-
 static void keyboard_input(nes_t *nes, SDL_Keycode sc, bool keydown) {
   u8 n;
   switch (sc) {
@@ -72,6 +68,7 @@ int main(int argc, char **argv) {
   window_init(&window);
 
   // Logging
+  // TODO: Make this more robust
   char *cpu_log_fn = "../logs/cpu.log";
   char *ppu_log_fn = "../logs/ppu.log";
   remove(cpu_log_fn);
@@ -85,13 +82,14 @@ int main(int argc, char **argv) {
   // TODO: Make this configurable
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);
 
-  while (!g_shutdown) {
+  bool is_running = true;
+  while (is_running) {
     // Main event polling loop
     // Also update the keyboard array so we can get input
     while (SDL_PollEvent(&event)) {
       switch (event.type) {
         case SDL_QUIT:
-          g_shutdown = true;
+          is_running = false;
           break;
         case SDL_KEYDOWN:
           keyboard_input(&nes, event.key.keysym.sym, true);

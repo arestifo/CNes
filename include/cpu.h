@@ -52,7 +52,7 @@ typedef struct cpu {
   u8  sp;                // Stack pointer register
   u8  p;                 // Status register
 
-  u64 cyc;               // Cycles
+  u64 ticks;               // Cycles
   u8  mem[CPU_MEM_SZ];   // Pointer to main memory
 
   // Interrupt flags
@@ -82,7 +82,9 @@ typedef enum addrmode {
 } addrmode_t;
 
 typedef enum interrupt {
-  INTR_NMI, INTR_IRQ, INTR_BRK
+  INTR_NMI,  // Non-maskable interrupt
+  INTR_IRQ,  // Standard interrupt
+  INTR_BRK   // Software-triggered (BRK) interrupt
 } interrupt_t;
 
 // Gets addressing mode from opcode.
@@ -92,6 +94,7 @@ addrmode_t get_addrmode(u8 opcode);
 u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode);
 void cpu_set_nz(nes_t *nes, u8 result);
 void cpu_init(nes_t *nes);
+void cpu_destroy(nes_t *nes);
 void cpu_tick(nes_t *nes);
 void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr);
 

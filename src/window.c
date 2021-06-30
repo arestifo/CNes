@@ -1,6 +1,7 @@
 #include "../include/window.h"
 #include "../include/ppu.h"
 #include "../include/cpu.h"
+#include "../include/apu.h"
 
 void window_init(window_t *wnd) {
   // Create the main display window
@@ -37,10 +38,17 @@ void window_update(window_t *wnd, nes_t *nes) {
     cpu_tick(nes);
 
     // 3 PPU ticks per CPU cycle
-    while (nes->ppu->ticks != nes->cpu->cyc * 3) {
+    while (nes->ppu->ticks != nes->cpu->ticks * 3) {
       ppu_tick(nes, wnd, pixels);
     }
 
+    // APU ticks
+    if (nes->apu->frame_counter_div == CPU_TICKS_PER_SEQ) {
+      nes->apu->frame_counter_div = 0;
+      apu_tick(nes);
+    } else {
+      nes->apu->frame_counter_div++;
+    }
   }
 
   // Draw the screen texture to the screen

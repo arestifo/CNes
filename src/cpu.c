@@ -13,7 +13,7 @@ void cpu_init(nes_t *nes) {
   cpu->a = 0;
   cpu->x = 0;
   cpu->y = 0;
-  cpu->cyc = 7;
+  cpu->ticks = 7;
   cpu->p = 0x24;
   cpu->sp = 0xFD;
   cpu->irq_pending = false;
@@ -26,6 +26,10 @@ void cpu_init(nes_t *nes) {
 
   // Start program execution
   cpu->pc = cpu_read16(nes, VEC_RESET);
+}
+
+void cpu_destroy(nes_t *nes) {
+  // TODO
 }
 
 u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
@@ -94,30 +98,30 @@ cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
     case REL:
       break;
     case ABS_IND:
-      cpu->cyc += 2;
+      cpu->ticks += 2;
       break;
     case ABS_IDX_X:
       if (PAGE_CROSSED(addr, addr + cpu->x) || is_write)
-        cpu->cyc++;
+        cpu->ticks++;
       break;
     case ABS_IDX_Y:
       if (PAGE_CROSSED(addr, addr + cpu->y) || is_write)
-        cpu->cyc++;
+        cpu->ticks++;
       break;
     case ZP_IDX_X:
     case ZP_IDX_Y:
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case ZP_IDX_IND:
-      cpu->cyc += 3;
+      cpu->ticks += 3;
       break;
     case ZP_IND_IDX_Y:
       low = cpu_read8(nes, addr);
       high = cpu_read8(nes, (addr + 1) & 0xFF);
       retval = low | (high << 8);
       if (PAGE_CROSSED(retval, retval + cpu->y) || is_write)
-        cpu->cyc++;
-      cpu->cyc += 2;
+        cpu->ticks++;
+      cpu->ticks += 2;
       return retval + cpu->y;
     case IMPL_ACCUM:
     case IMM:
@@ -160,7 +164,7 @@ addrmode_t get_addrmode(u8 opcode) {
 // TODO: If possible, add interrupt hijacking support
 // (it's likely not possible without sub-instruction level emulation)
 // https://wiki.nesdev.com/w/index.php/CPU_interrupts
-static void cpu_interrupt(nes_t *nes, interrupt_t type) {
+static void cpu_handle_irq(nes_t *nes, interrupt_t type) {
   cpu_t *cpu = nes->cpu;
   cpu_push16(nes, cpu->pc);
 
@@ -175,7 +179,7 @@ static void cpu_interrupt(nes_t *nes, interrupt_t type) {
     SET_BIT(cpu->p, B_BIT, 0);
     vec = VEC_NMI;
   } else {
-    printf("cpu_interrupt: invalid interrupt type %d\n", type);
+    printf("cpu_handle_irq: invalid interrupt type %d\n", type);
     exit(EXIT_FAILURE);
   }
 
@@ -194,7 +198,7 @@ void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
   ppu_t *ppu = nes->ppu;
 
   // Copy page of memory to PPU OAM
-  bool odd_cycle = cpu->cyc % 2 != 0;
+  bool odd_cycle = cpu->ticks % 2 != 0;
   for (int i = 0; i < OAM_NUM_SPR; i++) {
     ppu->oam[i].data.y_pos    = cpu_read8(nes, cpu_base_addr + (i * 4));
     ppu->oam[i].data.tile_idx = cpu_read8(nes, cpu_base_addr + (i * 4) + 1);
@@ -204,11 +208,11 @@ void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
   }
 
   // We just did 256 reads/writes, so 512 cycles total + 1 to wait for pending writes
-  cpu->cyc += 513;
+  cpu->ticks += 513;
 
   // And for some reason, if this was an odd cycle add an additional cycle
   if (odd_cycle)
-    cpu->cyc++;
+    cpu->ticks++;
 }
 
 void cpu_tick(nes_t *nes) {
@@ -245,11 +249,12 @@ void cpu_tick(nes_t *nes) {
 
   // Check for interrupts
   if (cpu->irq_pending) {
-    cpu_interrupt(nes, INTR_IRQ);
+    cpu_handle_irq(nes, INTR_IRQ);
     cpu->irq_pending = false;
   }
+
   if (cpu->nmi_pending) {
-    cpu_interrupt(nes, INTR_NMI);
+    cpu_handle_irq(nes, INTR_NMI);
     cpu->nmi_pending = false;
   }
 
@@ -262,7 +267,7 @@ void cpu_tick(nes_t *nes) {
     operand = cpu_read16(nes, cpu->pc + 1);
 
   cpu->pc += OPERAND_SIZES[mode] + 1;  // +1 for the opcode itself
-  cpu->cyc += OPERAND_SIZES[mode] + 1;
+  cpu->ticks += OPERAND_SIZES[mode] + 1;
   switch (opcode) {
     case 0x4C:  // JMP
     case 0x6C:
@@ -278,7 +283,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         cpu->x = cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->x);
       break;
@@ -286,98 +291,98 @@ void cpu_tick(nes_t *nes) {
       addr = cpu_resolve_addr(nes, operand, mode, false);
       cpu_push16(nes, cpu->pc - 1);
       cpu->pc = addr;
-      cpu->cyc += 3;
+      cpu->ticks += 3;
       break;
     case 0x60:  // RTS
       addr = cpu_pop16(nes) + 1;
       cpu->pc = addr;
-      cpu->cyc += 5;  // From adjusting the PC (not sure why JSR doesn't need this)
+      cpu->ticks += 5;  // From adjusting the PC (not sure why JSR doesn't need this)
       break;
     case 0xEA:  // NOP
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x38:  // SEC
       SET_BIT(cpu->p, C_BIT, 1);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0xF8:  // SED
       SET_BIT(cpu->p, D_BIT, 1);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x78:  // SEI
       SET_BIT(cpu->p, I_BIT, 1);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x18:  // CLC
       SET_BIT(cpu->p, C_BIT, 0);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0xD8:  // CLD
       SET_BIT(cpu->p, D_BIT, 0);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x58:  // CLI
       SET_BIT(cpu->p, I_BIT, 0);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0xB8:  // CLV
       SET_BIT(cpu->p, V_BIT, 0);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x90:  // BCC
       addr = cpu_resolve_addr(nes, operand, mode, false);
       if (!(cpu->p & C_MASK)) {
         cpu->pc = addr;
-        cpu->cyc++;
+        cpu->ticks++;
       }
       break;
     case 0xB0:  // BCS
       addr = cpu_resolve_addr(nes, operand, mode, false);
       if (cpu->p & C_MASK) {
         cpu->pc = addr;
-        cpu->cyc++;
+        cpu->ticks++;
       }
       break;
     case 0xD0:  // BNE
       addr = cpu_resolve_addr(nes, operand, mode, false);
       if (!(cpu->p & Z_MASK)) {
         cpu->pc = addr;
-        cpu->cyc++;
+        cpu->ticks++;
       }
       break;
     case 0xF0:  // BEQ
       addr = cpu_resolve_addr(nes, operand, mode, false);
       if (cpu->p & Z_MASK) {
         cpu->pc = addr;
-        cpu->cyc++;
+        cpu->ticks++;
       }
       break;
     case 0x10:  // BPL
       addr = cpu_resolve_addr(nes, operand, mode, false);
       if (!(cpu->p & N_MASK)) {
         cpu->pc = addr;
-        cpu->cyc++;
+        cpu->ticks++;
       }
       break;
     case 0x30:  // BMI
       addr = cpu_resolve_addr(nes, operand, mode, false);
       if (cpu->p & N_MASK) {
         cpu->pc = addr;
-        cpu->cyc++;
+        cpu->ticks++;
       }
       break;
     case 0x50:  // BVC
       addr = cpu_resolve_addr(nes, operand, mode, false);
       if (!(cpu->p & V_MASK)) {
         cpu->pc = addr;
-        cpu->cyc++;
+        cpu->ticks++;
       }
       break;
     case 0x70:  // BVS
       addr = cpu_resolve_addr(nes, operand, mode, false);
       if (cpu->p & V_MASK) {
         cpu->pc = addr;
-        cpu->cyc++;
+        cpu->ticks++;
       }
       break;
     case 0xA9:  // LDA
@@ -393,7 +398,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         cpu->a = cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->a);
       break;
@@ -407,7 +412,7 @@ void cpu_tick(nes_t *nes) {
       } else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         cpu->y = cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->y);
       break;
@@ -420,21 +425,21 @@ void cpu_tick(nes_t *nes) {
     case 0x91:
       addr = cpu_resolve_addr(nes, operand, mode, true);
       cpu_write8(nes, addr, cpu->a);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x86:  // STX
     case 0x96:
     case 0x8E:
       addr = cpu_resolve_addr(nes, operand, mode, true);
       cpu_write8(nes, addr, cpu->x);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x84:  // STY
     case 0x94:
     case 0x8C:
       addr = cpu_resolve_addr(nes, operand, mode, true);
       cpu_write8(nes, addr, cpu->y);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x24:  // BIT: n and z flag behavior is slightly different so we can't
     case 0x2C:  // use cpu_set_nz()
@@ -445,25 +450,25 @@ void cpu_tick(nes_t *nes) {
       SET_BIT(cpu->p, Z_BIT, !(result & cpu->a));
       SET_BIT(cpu->p, V_BIT, (result & V_MASK) >> V_BIT);
       SET_BIT(cpu->p, N_BIT, (result & N_MASK) >> N_BIT);
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x48:  // PHA
       cpu_push8(nes, cpu->a);
-      cpu->cyc += 2;
+      cpu->ticks += 2;
       break;
     case 0x08:  // PHP
       cpu_push8(nes, cpu->p | B_MASK);
-      cpu->cyc += 2;
+      cpu->ticks += 2;
       break;
     case 0x68:  // PLA
       cpu->a = cpu_pop8(nes);
       cpu_set_nz(nes, cpu->a);
-      cpu->cyc += 3;
+      cpu->ticks += 3;
       break;
     case 0x28:  // PLP
       result = cpu_pop8(nes) | U_MASK;
       cpu->p = result & ~B_MASK;
-      cpu->cyc += 3;
+      cpu->ticks += 3;
       break;
     case 0x29:  // AND
     case 0x25:
@@ -478,7 +483,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         cpu->a &= cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->a);
       break;
@@ -495,7 +500,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         cpu->a |= cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->a);
       break;
@@ -512,7 +517,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         cpu->a ^= cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->a);
       break;
@@ -529,7 +534,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         result = cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->a - result);
 
@@ -544,7 +549,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         result = cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->x - result);
 
@@ -559,7 +564,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         result = cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
       cpu_set_nz(nes, cpu->y - result);
 
@@ -579,7 +584,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         result = cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
 
       // Overflow detection
@@ -610,7 +615,7 @@ void cpu_tick(nes_t *nes) {
       else {
         addr = cpu_resolve_addr(nes, operand, mode, false);
         result = ~cpu_read8(nes, addr);
-        cpu->cyc++;
+        cpu->ticks++;
       }
 
       // Overflow detection
@@ -628,58 +633,58 @@ void cpu_tick(nes_t *nes) {
       break;
     case 0xE8:  // INX
       cpu->x++;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->x);
       break;
     case 0xC8:  // INY
       cpu->y++;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->y);
       break;
     case 0xCA:  // DEX
       cpu->x--;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->x);
       break;
     case 0x88:  // DEY
       cpu->y--;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->y);
       break;
     case 0xAA:  // TAX
       cpu->x = cpu->a;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->x);
       break;
     case 0xA8:  // TAY
       cpu->y = cpu->a;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->y);
       break;
     case 0xBA:  // TSX
       cpu->x = cpu->sp;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->x);
       break;
     case 0x8A:  // TXA
       cpu->a = cpu->x;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->a);
       break;
     case 0x9A:  // TXS
       cpu->sp = cpu->x;
-      cpu->cyc++;
+      cpu->ticks++;
       break;
     case 0x98:  // TYA
       cpu->a = cpu->y;
-      cpu->cyc++;
+      cpu->ticks++;
       cpu_set_nz(nes, cpu->a);
       break;
     case 0x40:  // RTI
       result = cpu_pop8(nes) | U_MASK;
       cpu->p = result & ~B_MASK;
       cpu->pc = cpu_pop16(nes);
-      cpu->cyc += 5;
+      cpu->ticks += 5;
       break;
     case 0x4A:  // LSR
     case 0x46:
@@ -689,7 +694,7 @@ void cpu_tick(nes_t *nes) {
       if (mode == IMPL_ACCUM) {
         SET_BIT(cpu->p, C_BIT, cpu->a & C_MASK);
         cpu->a >>= 1;
-        cpu->cyc++;
+        cpu->ticks++;
         cpu_set_nz(nes, cpu->a);
       } else {
         addr = cpu_resolve_addr(nes, operand, mode, true);
@@ -703,7 +708,7 @@ void cpu_tick(nes_t *nes) {
 
         cpu_write8(nes, addr, result);
         cpu_set_nz(nes, result);
-        cpu->cyc += 3;
+        cpu->ticks += 3;
       }
       break;
     case 0x0A:  // ASL
@@ -714,7 +719,7 @@ void cpu_tick(nes_t *nes) {
       if (mode == IMPL_ACCUM) {
         SET_BIT(cpu->p, C_BIT, (cpu->a & 0x80) >> 7);
         cpu->a <<= 1;
-        cpu->cyc++;
+        cpu->ticks++;
         cpu_set_nz(nes, cpu->a);
       } else {
         addr = cpu_resolve_addr(nes, operand, mode, true);
@@ -726,7 +731,7 @@ void cpu_tick(nes_t *nes) {
 
         cpu_write8(nes, addr, result);
         cpu_set_nz(nes, result);
-        cpu->cyc += 3;
+        cpu->ticks += 3;
       }
       break;
     case 0x6A:  // ROR
@@ -739,7 +744,7 @@ void cpu_tick(nes_t *nes) {
         SET_BIT(cpu->p, C_BIT, cpu->a & C_MASK);
         cpu->a >>= 1;
         cpu->a |= old_carry << 7;
-        cpu->cyc++;
+        cpu->ticks++;
         cpu_set_nz(nes, cpu->a);
       } else {
         addr = cpu_resolve_addr(nes, operand, mode, true);
@@ -752,7 +757,7 @@ void cpu_tick(nes_t *nes) {
 
         cpu_write8(nes, addr, result);
         cpu_set_nz(nes, result);
-        cpu->cyc += 3;
+        cpu->ticks += 3;
       }
       break;
     case 0x2A:  // ROL
@@ -765,7 +770,7 @@ void cpu_tick(nes_t *nes) {
         SET_BIT(cpu->p, C_BIT, (cpu->a & 0x80) >> 7);
         cpu->a <<= 1;
         cpu->a |= old_carry;
-        cpu->cyc++;
+        cpu->ticks++;
         cpu_set_nz(nes, cpu->a);
       } else {
         addr = cpu_resolve_addr(nes, operand, mode, true);
@@ -778,7 +783,7 @@ void cpu_tick(nes_t *nes) {
 
         cpu_write8(nes, addr, result);
         cpu_set_nz(nes, result);
-        cpu->cyc += 3;
+        cpu->ticks += 3;
       }
       break;
     case 0xE6:  // INC
@@ -793,7 +798,7 @@ void cpu_tick(nes_t *nes) {
 
       cpu_set_nz(nes, result);
       cpu_write8(nes, addr, result);
-      cpu->cyc += 3;
+      cpu->ticks += 3;
       break;
     case 0xC6:  // DEC
     case 0xD6:
@@ -807,10 +812,10 @@ void cpu_tick(nes_t *nes) {
 
       cpu_set_nz(nes, result);
       cpu_write8(nes, addr, result);
-      cpu->cyc += 3;
+      cpu->ticks += 3;
       break;
     case 0x00:  // BRK
-      cpu_interrupt(nes, INTR_BRK);
+      cpu_handle_irq(nes, INTR_BRK);
       break;
     default:
       printf("cpu_tick $%04X: unsupported op 0x%02X (%s)\n",
@@ -927,7 +932,7 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   fprintf(log_f,
           "A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3u,%3u CYC:%llu",
           cpu->a, cpu->x, cpu->y, cpu->p, cpu->sp, nes->ppu->scanline,
-          nes->ppu->dot, cpu->cyc);
+          nes->ppu->dot, cpu->ticks);
 
   // Mark where interrupts occur
   if (cpu->nmi_pending) {

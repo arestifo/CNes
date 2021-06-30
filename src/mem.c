@@ -2,6 +2,7 @@
 #include "../include/ppu.h"
 #include "../include/cpu.h"
 #include "../include/cart.h"
+#include "../include/apu.h"
 
 void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   if (addr >= 0x2000 && addr <= 0x3FFF) {
@@ -16,6 +17,8 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   } else if (addr == OAM_DMA_ADDR) {
     // Performs CPU -> PPU OAM DMA. Suspends the CPU for 513 or 514 cycles
     cpu_oam_dma(nes, val << 8);
+  } else if (addr >= 0x4000 && addr <= 0x4017) {
+    apu_write(nes, addr, val);
   } else {
     nes->cpu->mem[addr] = val;
   }
@@ -31,9 +34,7 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     return cpu->mem[addr % 0x0800];
   } else if (addr >= 0x2000 && addr <= 0x3FFF) {
     // PPU registers ($2000-$2007) are mirrored from $2008-$3FFF
-    return ppu_reg_read(nes, addr % 8);
-  } else if (addr >= 0x4000 && addr <= 0x4015) {
-
+    return ppu_reg_read(nes, addr & 7);
   } else if (addr == CONTROLLER1_PORT) {
     retval = nes->ctrl1_sr;
 
@@ -42,6 +43,9 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     return (retval & 1) | 0x40;
   } else if (addr == CONTROLLER2_PORT) {
     // TODO Controller 2 reads (low priority)
+  } else if (addr == 0x4015) {
+    // APU status register
+    return apu_read(nes, addr);
   } else if (addr >= 0x4018 && addr <= 0x401F) {
     printf("cpu_read8: reading cpu test mode registers is not supported.\n");
     exit(EXIT_FAILURE);
@@ -56,9 +60,9 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
       else
         return cpu->mem[addr];  // NROM-256
     }
-    printf("cpu_read8: invalid read from 0x%04X\n", addr); // TODO
+    printf("cpu_read8: invalid read from $%04X\n", addr); // TODO
   } else {
-    printf("cpu_read8: invalid read from 0x%04X\n", addr);
+    printf("cpu_read8: invalid read from $%04X\n", addr);
     exit(EXIT_FAILURE);
   }
   return 0;
