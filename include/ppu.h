@@ -9,8 +9,8 @@
 #define PPUCTRL_SPRITE_SZ_BIT     5
 #define PPUCTRL_NMI_ENABLE_BIT    7
 
-#define PPUMASK_SHOW_BGR_LEFT_BIT 1
-#define PPUMASK_SHOW_SPR_LEFT_BIT 2
+#define PPUMASK_SHOW_BGR_LEFT8_BIT 1
+#define PPUMASK_SHOW_SPR_LEFT8_BIT 2
 #define PPUMASK_SHOW_BGR_BIT      3
 #define PPUMASK_SHOW_SPR_BIT      4
 
@@ -107,8 +107,8 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg);
 void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val);
 
 // Internal PPU read functions. Should only be called by internal PPU functions
-u8 ppu_read(nes_t *nes, u16 addr);
-void ppu_write(nes_t *nes, u16 addr, u8 val);
+u8 ppu_read(ppu_t *ppu, u16 addr);
+void ppu_write(ppu_t *ppu, u16 addr, u8 val);
 
 void ppu_init(nes_t *nes);
 void ppu_tick(nes_t *nes, window_t *wnd, void *pixels);

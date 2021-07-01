@@ -6,7 +6,6 @@ void cart_init(cart_t *cart, char *cart_fn) {
   size_t header_sz;
   bool found;
   int i;
-  const int NUM_MAPPERS = 1;
   const int SUPPORTED_MAPPERS[NUM_MAPPERS] = {0};
 
   // Open cart file

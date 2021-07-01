@@ -6,7 +6,7 @@
 #include "../include/args.h"
 
 static bool write_toggle = false;
-static u16 ppu_decode_addr(nes_t *nes, u16 addr);
+static u16 ppu_decode_addr(ppu_t *ppu, u16 addr);
 
 // Reads in a .pal file as the NES system palette
 // TODO: Generate palettes (low priority)
@@ -60,7 +60,7 @@ void ppu_init(nes_t *nes) {
 }
 
 // Palette mirroring
-static inline u32 ppu_get_palette_color(nes_t *nes, u8 color_i) {
+static inline u32 ppu_get_palette_color(ppu_t *ppu, u8 color_i) {
   // $3F10, $3F14, $3F18, $3F1C are mirrors of $3F00, $3F04, $3F08, $3F0C
   u8 adj_i = color_i;
   if (color_i >= 0x10) {
@@ -68,7 +68,7 @@ static inline u32 ppu_get_palette_color(nes_t *nes, u8 color_i) {
       adj_i &= ~0x10;  // Clear bit 4, mirroring the address down by 0x10
   }
 
-  return nes->ppu->palette[adj_i];
+  return ppu->palette[adj_i];
 }
 
 // Info from https://wiki.nesdev.com/w/index.php/PPU_scrolling
@@ -133,147 +133,152 @@ static u32 ppu_render_pixel(nes_t *nes) {
 
   // Get current position on the screen
   u8 coarse_x = ppu->vram_addr & 0x1F;
-  u8 coarse_y = (ppu->vram_addr & (0x1F << 5)) >> 5;
-  u8 fine_y = (ppu->vram_addr & (7 << 12)) >> 12;
-  u8 cur_nt = (ppu->vram_addr & (3 << 10)) >> 10;
+  u8 coarse_y = (ppu->vram_addr >> 5) & 0x1F;
+  u8 fine_y = (ppu->vram_addr >> 12) & 0x7;
+  u8 cur_nt = (ppu->vram_addr >> 10) & 0x3;
 
   u8 cur_x = ppu->dot - 1;
   u8 cur_y = ppu->scanline;
 
   // **************** Background rendering ****************
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
+  bool show_bgr_left8 = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_LEFT8_BIT);
   if (show_bgr) {
-    // **** Get pattern table and attribute values ****
-    // Create an index into the pattern table from value at nametable idx
-    u16 tile_idx = 0x2000 | (ppu->vram_addr & 0x0FFF);
+    if (cur_x > 7 || show_bgr_left8) {
+      // **** Get pattern table and attribute values ****
+      // Create an index into the pattern table from value at nametable idx
+      u16 tile_idx = 0x2000 | (ppu->vram_addr & 0x0FFF);
 
-    // Get the pattern table index from the nametable index
-    u8 pt_idx = ppu_read(nes, tile_idx);
+      // Get the pattern table index from the nametable index
+      u8 pt_idx = ppu_read(ppu, tile_idx);
 
-    // **** Read two bytes from the pattern table ****
-    u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
+      // **** Read two bytes from the pattern table ****
+      u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
 
-    // Each tile in the pattern table has 16 bytes: 8 for the lower plane (bit 0 of color),
-    // 8 for the upper plane (bit 1 of color)
-    u16 pt_addr = pt_base + pt_idx * 16 + fine_y;
+      // Each tile in the pattern table has 16 bytes: 8 for the lower plane (bit 0 of color),
+      // 8 for the upper plane (bit 1 of color)
+      u16 pt_addr = pt_base + pt_idx * 16 + fine_y;
 
-    u8 pt_val_lo = ppu_read(nes, pt_addr);
-    u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
+      u8 pt_val_lo = ppu_read(ppu, pt_addr);
+      u8 pt_val_hi = ppu_read(ppu, pt_addr + 8);
 
-    // **** Extract two pattern table color bits ****
-    // We're ANDing with a mask > 1, but we want bit_lo and bit_hi to be in {0..1}
-    // The !! "operator" returns 1 if its input > 0 and 0 if its input is 0. It is essentially
-    // casts a number to a bool
-    u8 pixel_mask = 0x80 >> ppu->fine_x;
-    u8 pt_color_bits = !!(pt_val_lo & pixel_mask) | (!!(pt_val_hi & pixel_mask) << 1);
+      // **** Extract two pattern table color bits ****
+      // We're ANDing with a mask > 1, but we want bit_lo and bit_hi to be in {0..1}
+      // The !! "operator" returns 1 if its input > 0 and 0 if its input is 0. It is essentially
+      // casts a number to a bool
+      u8 pixel_mask = 0x80 >> ppu->fine_x;
+      u8 pt_color_bits = !!(pt_val_lo & pixel_mask) | (!!(pt_val_hi & pixel_mask) << 1);
 
-    // **** Get attribute table byte ****
-    u16 attrib_base = 0x3C0;  // 0b00 1111 000 000;
+      // **** Get attribute table byte ****
+      u16 attrib_base = 0x3C0;  // 0b00 1111 000 000;
 
-    // Upper three bits of coarse dot, upper three bits of coarse scanline, attribute offset, nametable
-    u8 attrib_x = (coarse_x & 0x1C) >> 2;
-    u8 attrib_y = (coarse_y & 0x1C) >> 2;
-    u16 attrib_addr = attrib_x | (attrib_y << 3) | attrib_base | (cur_nt << 10);
-    u8 attrib_val = ppu_read(nes, 0x2000 + attrib_addr);
+      // Upper three bits of coarse dot, upper three bits of coarse scanline, attribute offset, nametable
+      u8 attrib_x = (coarse_x & 0x1C) >> 2;
+      u8 attrib_y = (coarse_y & 0x1C) >> 2;
+      u16 attrib_addr = attrib_x | (attrib_y << 3) | attrib_base | (cur_nt << 10);
+      u8 attrib_val = ppu_read(ppu, 0x2000 + attrib_addr);
 
-    // **** Extract attribute table bits ****
-    // Each attribute table byte controls four sub-tiles of two bytes each
-    // Find the dot and scanline "quadrants" of the current tile
-    u8 attrib_quadx = coarse_x % 4 >= 2;
-    u8 attrib_quady = coarse_y % 4 >= 2;
+      // **** Extract attribute table bits ****
+      // Each attribute table byte controls four sub-tiles of two bytes each
+      // Find the dot and scanline "quadrants" of the current tile
+      u8 attrib_quadx = coarse_x % 4 >= 2;
+      u8 attrib_quady = coarse_y % 4 >= 2;
 
-    // Get the two attribute bits (colors) from the calculated quadrants
-    u8 attrib_idx_shift = 2 * (attrib_quadx | (attrib_quady << 1));
-    u8 attrib_color_bits = (attrib_val & (3 << attrib_idx_shift)) >> attrib_idx_shift;
+      // Get the two attribute bits (colors) from the calculated quadrants
+      u8 attrib_idx_shift = 2 * (attrib_quadx | (attrib_quady << 1));
+      u8 attrib_color_bits = (attrib_val & (3 << attrib_idx_shift)) >> attrib_idx_shift;
 
-    // Calculate an index into the background palette from the palette and attribute color bits
-    u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2));
+      // Calculate an index into the background palette from the palette and attribute color bits
+      u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2));
 
-    if (nes->args->ppu_log_output) {
-      fprintf(nes->args->ppu_logf,
-              "(%d, %d) = coarse_x=%d coarse_y=%d fine_x=%d fine_y=%d vram=$%04X\n", cur_y, cur_x,
-              coarse_x, coarse_y, ppu->fine_x, fine_y, ppu->vram_addr);
+      if (nes->args->ppu_log_output) {
+        fprintf(nes->args->ppu_logf,
+                "(%d, %d) = coarse_x=%d coarse_y=%d fine_x=%d fine_y=%d vram=$%04X\n", cur_y, cur_x,
+                coarse_x, coarse_y, ppu->fine_x, fine_y, ppu->vram_addr);
+      }
+
+      // Get an index into the system palette from the background palette index
+      bgr_color_idx = palette_idx & 3 ? ppu_read(ppu, palette_idx) : 0;
     }
-
-    // Get an index into the system palette from the background palette index
-    bgr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
   }
   // ************** End background rendering **************
 
   // ****************** Sprite rendering ******************
   // Look through each sprite in the secondary OAM and compare their X-positions to the current PPU X
   bool show_spr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
+  bool show_spr_left8 = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_LEFT8_BIT);
   if (show_spr) {
-    // Get the sprite to be shown from the secondary OAM.
-    // Secondary OAM is initialized at the beginning of every scanline and contains the sprites to
-    // be shown on that scanline
-    // We count down from 7..0 because that is effectively how the NES does it
-    s8 active_spr_i = -1;
-    for (s8 i = 0; i < SEC_OAM_NUM_SPR; i++) {
-      sprite_t cur_spr = ppu->sec_oam[i];
-      if (cur_spr.data.tile_idx)
-        if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8)
-          active_spr_i = i;
-    }
+    if (cur_x > 7 || show_spr_left8) {
+      // Get the sprite to be shown from the secondary OAM.
+      // Secondary OAM is initialized at the beginning of every scanline and contains the sprites to
+      // be shown on that scanline
+      // We count down from 7..0 because that is effectively how the NES does it
+      s8 active_spr_i = -1;
+      for (s8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
+        sprite_t cur_spr = ppu->sec_oam[i];
+        if (cur_spr.data.tile_idx) {
+          if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8) {
+            active_spr_i = i;
+          }
+        }
+      }
 
-    if (active_spr_i >= 0) {
-      // **** Get sprite characteristics ****
-      active_spr = ppu->sec_oam[active_spr_i];
-      u8 spr_fine_y = cur_y - active_spr.data.y_pos;
-      u8 spr_fine_x = cur_x - active_spr.data.x_pos;
-      bool flip_h = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPH_BIT);
-      bool flip_v = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPV_BIT);
-      u8 pixel_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
+      if (active_spr_i >= 0) {
+        // **** Get sprite characteristics ****
+        active_spr = ppu->sec_oam[active_spr_i];
+        u8 spr_fine_y = cur_y - active_spr.data.y_pos;
+        u8 spr_fine_x = cur_x - active_spr.data.x_pos;
+        bool flip_h = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPH_BIT);
+        bool flip_v = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPV_BIT);
 
-      // **** Get two pattern table sprite bytes ****
-      u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
-      u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
-      u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
+        // **** Get two pattern table sprite bytes ****
+        u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
+        u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
+        u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
 
-      u8 pt_val_lo = ppu_read(nes, pt_addr);
-      u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
+        u8 pt_val_lo = ppu_read(ppu, pt_addr);
+        u8 pt_val_hi = ppu_read(ppu, pt_addr + 8);
 
-      // **** Get the color bits: two from PT, two from sprite attributes ****
-      u8 pt_color_bits = !!(pt_val_lo & pixel_mask) | !!(pt_val_hi & pixel_mask) << 1;
-      u8 attrib_color_bits = active_spr.data.attr & 3;
-      u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2) | 0x10);
+        // **** Get the color bits: two from PT, two from sprite attributes ****
+        u8 pt_fine_x_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
+        u8 pt_color_bits = !!(pt_val_lo & pt_fine_x_mask) | !!(pt_val_hi & pt_fine_x_mask) << 1;
+        u8 attrib_color_bits = active_spr.data.attr & 3;
+        u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2) | 0x10);
 
-      // **** Get the final sprite color ****
-      spr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
-      spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
+        // **** Get the final sprite color ****
+        spr_color_idx = palette_idx & 3 ? ppu_read(ppu, palette_idx) : 0;
+        spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
+      }
     }
   }
   // **************** End sprite rendering ****************
 
   // **************** Pixel multiplexer/display ****************
   u32 final_pixel;
-  u8 uni_bgr_color_idx = ppu_read(nes, PALETTE_BASE);
+  u8 uni_bgr_color_idx = ppu_read(ppu, PALETTE_BASE);
 
   if (!bgr_color_idx && !spr_color_idx)
-    final_pixel = ppu_get_palette_color(nes, uni_bgr_color_idx);
+    final_pixel = ppu_get_palette_color(ppu, uni_bgr_color_idx);
   else if (!bgr_color_idx)
-    final_pixel = ppu_get_palette_color(nes, spr_color_idx);
+    final_pixel = ppu_get_palette_color(ppu, spr_color_idx);
   else if (!spr_color_idx)
-    final_pixel = ppu_get_palette_color(nes, bgr_color_idx);
+    final_pixel = ppu_get_palette_color(ppu, bgr_color_idx);
   else {
     // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
     // detection. Check that here
     // TODO: Don't trigger sprite zero hit when the left-side clipping window is enabled
-    if (active_spr.sprite0)
+    if (active_spr.sprite0 && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT))
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
-    final_pixel = spr_has_priority ? ppu_get_palette_color(nes, spr_color_idx)
-                                   : ppu_get_palette_color(nes, bgr_color_idx);
+    final_pixel = spr_has_priority ? ppu_get_palette_color(ppu, spr_color_idx)
+                                   : ppu_get_palette_color(ppu, bgr_color_idx);
   }
 
   return final_pixel;
 }
 
 // Does a linear search through OAM to find up to 8 sprites to render for the current scanline
-static void ppu_fill_sec_oam(nes_t *nes) {
+static void ppu_fill_sec_oam(ppu_t *ppu) {
   // Clear the list of sprites to draw (secondary OAM)
-  // Zeroing out the sec_oam array has the benefit of setting the sprite struct valid flags to false
-  // So we know which indices of sec_oam are filled
-  ppu_t *ppu = nes->ppu;
   memset(ppu->sec_oam, 0, SEC_OAM_NUM_SPR * sizeof *ppu->sec_oam);
 
   // Search through OAM to find sprites that are in range
@@ -306,7 +311,7 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     // Cycle 0 on all visible scanlines is an idle cycle, but we will use it to get the
     // sprites that should be rendered on this scanline
     if (DOT == 0) {
-      ppu_fill_sec_oam(nes);
+      ppu_fill_sec_oam(ppu);
     } else if (DOT >= 1 && DOT <= 256) {
       // We're in the visible section of rendering, so render a pixel
       u32 pixel = ppu_render_pixel(nes);
@@ -403,7 +408,7 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
 
       // PPUDATA read buffer
       retval = read_buf;
-      read_buf = ppu_read(nes, temp_addr);
+      read_buf = ppu_read(ppu, temp_addr);
 
       return retval;
     default:
@@ -485,7 +490,7 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       break;
     case PPUDATA:
       vram_inc = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_VRAM_INC_BIT) ? 32 : 1;
-      ppu_write(nes, ppu->vram_addr, val);
+      ppu_write(ppu, ppu->vram_addr, val);
 
       ppu->vram_addr += vram_inc;
       break;
@@ -500,9 +505,7 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
   }
 }
 
-static u16 ppu_decode_addr(nes_t *nes, u16 addr) {
-  ppu_t *ppu = nes->ppu;
-
+static u16 ppu_decode_addr(ppu_t *ppu, u16 addr) {
   // $3F20-$3FFF are mirrors of $3F00-$3F1F (palette)
   // $3000-$3EFF are mirrors of $2000-$2EFF (nametables)
 
@@ -514,7 +517,7 @@ static u16 ppu_decode_addr(nes_t *nes, u16 addr) {
     if ((addr & 3) == 0)
       addr &= ~0x10;
   } else if (addr >= 0x3F20 && addr <= 0x3FFF) {
-    addr = ppu_decode_addr(nes, PALETTE_BASE + addr % 0x20);
+    addr = ppu_decode_addr(ppu, PALETTE_BASE + addr % 0x20);
   }
 
   // PPU mirroring
@@ -537,16 +540,12 @@ static u16 ppu_decode_addr(nes_t *nes, u16 addr) {
   return addr;
 }
 
-inline u8 ppu_read(nes_t *nes, u16 addr) {
-  u16 decoded_addr = ppu_decode_addr(nes, addr);
-
-  return nes->ppu->mem[decoded_addr];
+inline u8 ppu_read(ppu_t *ppu, u16 addr) {
+  return ppu->mem[ppu_decode_addr(ppu, addr)];
 }
 
-inline void ppu_write(nes_t *nes, u16 addr, u8 val) {
-  u16 decoded_addr = ppu_decode_addr(nes, addr);
-
-  nes->ppu->mem[decoded_addr] = val;
+inline void ppu_write(ppu_t *ppu, u16 addr, u8 val) {
+  ppu->mem[ppu_decode_addr(ppu, addr)] = val;
 }
 
 void ppu_destroy(nes_t *nes) {

@@ -7,6 +7,8 @@
 #define CHRROM_BLOCK_SZ 0x2000
 #define TRAINER_SZ      0x200
 
+#define NUM_MAPPERS 1
+
 // iNES file format information from NESdev wiki
 // https://wiki.nesdev.com/w/index.php/INES
 typedef struct cart {

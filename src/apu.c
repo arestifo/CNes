@@ -31,8 +31,6 @@ u8 apu_read(nes_t *nes, u16 addr) {
 void apu_write(nes_t *nes, u16 addr, u8 val) {
   apu_t *apu = nes->apu;
 
-  apu->reg.bytes[addr - 0x4000] = val;
-
   // TODO: Side effects
   switch (addr) {
     case 0x4003:
@@ -131,19 +129,19 @@ void apu_tick(nes_t *nes) {
     apu->frame_counter_step++;
 }
 
-static void apu_fill_buffer(void *apu, Uint8 *stream, int len) {
+static void apu_fill_buffer(void *userdata, Uint8 *stream, int len) {
+  apu_t *apu = (apu_t *) userdata;
 
+  static int i = 0;
+  printf("apu_fill_buffer called i=%d len=%d\n", i++, len);
+
+  // Test: fill audio buffer with silence
+  // TODO: Waveform synthesis
+  memset(stream, apu->audio_spec.silence, len);
 }
 
 void apu_init(nes_t *nes, s32 sample_rate, u32 buf_len) {
   apu_t *apu = nes->apu;
-
-  // There are 24 memory-mapped APU registers spanning $4000-$4017 (this inclues 21 accessible
-  // addresses and three padding bytes; there is nothing at $4009, $400D, and $4014)
-  // Since we're directly writing and indexing the APU registers, the register structure needs to
-  // be the correct size
-  assert(sizeof apu->reg == 24);
-  memset(&apu->reg, 0, sizeof apu->reg);
 
   apu->pulse1_sweep_c = 0;
   apu->pulse2_sweep_c = 0;
@@ -162,9 +160,10 @@ void apu_init(nes_t *nes, s32 sample_rate, u32 buf_len) {
   want.freq = sample_rate;
   want.format = AUDIO_S16SYS;
   want.channels = 1;
+  want.callback = apu_fill_buffer;
+  want.userdata = apu;
   want.samples = buf_len;
 
-  SDL_AudioSpec have;
   if (!(apu->device_id = SDL_OpenAudioDevice(NULL, 0, &want, &apu->audio_spec, 0)))
     printf("apu_init: could not open audio device!\n");
 
