@@ -66,7 +66,7 @@ int nes_fclose(FILE *f) {
 
 
 // Gets assembler mnemonic from opcode
-char *opcode_tos(u8 opcode) {
+char *cpu_opcode_tos(u8 opcode) {
   switch (opcode) {
     case 0x69:
     case 0x65:
@@ -276,7 +276,7 @@ char *opcode_tos(u8 opcode) {
     case 0x98:
       return "TYA";
     default:
-      printf("opcode_tos: unknown opcode 0x%02X\n", opcode);
+      printf("cpu_opcode_tos: unknown opcode 0x%02X\n", opcode);
       return "UNK";
   }
 }

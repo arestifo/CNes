@@ -43,11 +43,11 @@ void window_update(window_t *wnd, nes_t *nes) {
     }
 
     // APU ticks
-    if (nes->apu->frame_counter_div == CPU_TICKS_PER_SEQ) {
-      nes->apu->frame_counter_div = 0;
+    if (nes->apu->frame_counter.divider == NTSC_TICKS_PER_SEQ) {
+      nes->apu->frame_counter.divider = 0;
       apu_tick(nes);
     } else {
-      nes->apu->frame_counter_div++;
+      nes->apu->frame_counter.divider++;
     }
   }
 

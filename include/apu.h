@@ -3,139 +3,135 @@
 
 #include "nes.h"
 
-#define CPU_TICKS_PER_SEQ 7457
+// NTSC CPU speed (~1.78 MHz)
+#define NTSC_CPU_SPEED 1789773
+
+// Number of CPU ticks per 1/240th of a second. This is the basis of all APU timing
+#define NTSC_TICKS_PER_SEQ (NTSC_CPU_SPEED / 240)
 
 typedef struct apu {
-  union {
-    struct {
-      // ******************** Pulse channel 1 ********************
-      struct {
-        // Duty cycle/volume parameters
-        u8 duty: 2;
-        u8 lc_disable: 1;
-        u8 const_v: 1;
-        u8 envelope: 4;
+  // ******************** Pulse channel 1 ********************
+  struct {
+    // Duty cycle/volume parameters
+    u8 duty: 2;
+    u8 lc_disable: 1;
+    u8 const_v: 1;
+    u8 envelope: 4;
 
-        // Sweep unit parameters
-        u8 enabled: 1;
-        u8 period: 3;
-        u8 negative: 1;
-        u8 shift_c: 3;
+    // Sweep unit parameters
+    u8 sweep_enabled: 1;
+    u8 sweep_period: 3;
+    u8 sweep_neg: 1;
+    u8 sweep_shift: 3;
 
-        // Timer low
-        u8 timer_lo;
+    // Length counter load value/timer high
+    u8 lc_idx: 5;
 
-        // Length counter load value/timer high
-        u8 lc_idx: 5;
-        u8 timer_hi: 3;
-      } pulse1;
+    // Timer/frequency of output waveform
+    u16 timer: 11;
 
-      // ******************** Pulse channel 2 ********************
-      struct {
-        // Duty cycle/volume parameters
-        u8 duty: 2;
-        u8 lc_disable: 1;
-        u8 const_v: 1;
-        u8 envelope: 4;
+    // Sweep unit
+    u8 sweep_c;
 
-        // Sweep unit parameters
-        u8 enabled: 1;
-        u8 period: 3;
-        u8 negative: 1;
-        u8 shift_c: 3;
+    // Length counter
+    u8 lc;
+  } pulse1;
 
-        // Timer low
-        u8 timer_lo;
+  // ******************** Pulse channel 2 ********************
+  struct {
+    // Duty cycle/volume parameters
+    u8 duty: 2;
+    u8 lc_disable: 1;
+    u8 const_v: 1;
+    u8 envelope: 4;
 
-        // Length counter load value/timer high
-        u8 lc_idx: 5;
-        u8 timer_hi: 3;
-      } pulse2;
+    // Sweep unit parameters
+    u8 sweep_enabled: 1;
+    u8 sweep_period: 3;
+    u8 sweep_neg: 1;
+    u8 sweep_shift: 3;
 
-      // ******************** Triangle channel ********************
-      struct {
-        // Linear counter flags/parameters
-        u8 lc_disable: 1;
-        u8 cnt_reload_val: 7;
+    // Length counter load value/timer high
+    u8 lc_idx: 5;
 
-        // $4009 is unused for APU triangle so include this padding for indexing purposes
-        u8 padding_4009;
+    // Timer/frequency of output waveform
+    u16 timer: 11;
 
-        // Timer low
-        u8 timer_lo;
+    // Sweep unit
+    u8 sweep_c;
+    u8 lc;
+  } pulse2;
 
-        // Length counter load value/timer high
-        u8 lc_idx: 5;
-        u8 timer_hi: 3;
-      } triangle;
+  // ******************** Triangle channel ********************
+  struct {
+    // Linear counter flags/parameters
+    u8 lc_disable: 1;
+    u8 cnt_reload_val: 7;
 
-      // ******************** Noise channel ********************
-      struct {
-        // Volume parameters
-        u8 r1_unused: 2;
-        u8 lc_disable: 1;
-        u8 const_v: 1;
-        u8 envelope: 4;
+    // Length counter load value/timer high
+    u8 lc_idx: 5;
 
-        u8 padding_400D;  // $400D is unused in APU noise channel
+    u16 timer: 11;
 
-        // Noise channel parameters
-        u8 mode: 1;
-        u8 r2_unused: 3;
-        u8 period: 4;
+    u8 lc;
+    u8 linc;
+  } triangle;
 
-        // Length counter load value
-        u8 lc_idx: 5;
-        u8 r3_unused: 3;
-      } noise;
+  // ******************** Noise channel ********************
+  struct {
+    // Volume parameters
+    u8 r1_unused: 2;
+    u8 lc_disable: 1;
+    u8 const_v: 1;
+    u8 envelope: 4;
 
-      // ******************** DMC channel ********************
-      struct {
-        u8 irq_enable: 1;
-        u8 loop: 1;
-        u8 r1_unused: 2;
-        u8 freq_idx: 4;
+    // Noise channel parameters
+    u8 mode: 1;
+    u8 r2_unused: 3;
+    u8 period: 4;
 
-        u8 r2_unused: 1;
-        u8 direct_load: 7;
+    // Length counter load value
+    u8 lc_idx: 5;
+    u8 r3_unused: 3;
 
-        u8 samp_addr;
-        u8 samp_len;
-      } dmc;
+    u8 lc;
+    u8 shift_reg;
+  } noise;
 
-      u8 padding_4014;
+  // ******************** DMC channel ********************
+  struct {
+    u8 irq_enable: 1;
+    u8 loop: 1;
+    u8 r1_unused: 2;
+    u8 freq_idx: 4;
 
-      // ******************** Status register and frame counter  ********************
-      struct {
-        u8 sr_unused: 3;
-        u8 dmc_enable: 1;
-        u8 noise_enable: 1;
-        u8 triangle_enable: 1;
-        u8 pulse2_enable: 1;
-        u8 pulse1_enable: 1;
-      } status;
+    u8 r2_unused: 1;
+    u8 direct_load: 7;
 
-      u8 padding_4016;
+    u16 samp_addr;
+    u16 samp_len;
+  } dmc;
 
-      // TODO: Frame counter
-      struct {
-        u8 seq_mode: 1;
-        u8 irq_disable: 1;
-        u8 r1_unused: 6;
-      } frame_counter;
-    };
 
-    u8 bytes[24];
-  } reg;
+  // ******************** Status register and frame counter  ********************
+  struct {
+    u8 sr_unused: 3;
+    u8 dmc_enable: 1;
+    u8 noise_enable: 1;
+    u8 triangle_enable: 1;
+    u8 pulse2_enable: 1;
+    u8 pulse1_enable: 1;
+  } status;
 
-  u8 pulse1_sweep_c;
-  u8 pulse2_sweep_c;
-  u8 pulse1_lc;
-  u8 pulse2_lc;
-  u8 triangle_lc;
-  u8 noise_lc;
-  u8 frame_counter_step;
-  u32 frame_counter_div;
+  // TODO: Frame counter
+  struct {
+    u8 seq_mode: 1;
+    u8 irq_disable: 1;
+    u8 r1_unused: 6;
+
+    u8 step;
+    u32 divider;
+  } frame_counter;
 
   bool frame_interrupt;
   u64 ticks;

@@ -819,12 +819,12 @@ void cpu_tick(nes_t *nes) {
       break;
     default:
       printf("cpu_tick $%04X: unsupported op 0x%02X (%s)\n",
-             cpu->pc - (OPERAND_SIZES[mode] + 1), opcode, opcode_tos(opcode));
+             cpu->pc - (OPERAND_SIZES[mode] + 1), opcode, cpu_opcode_tos(opcode));
       exit(EXIT_FAILURE);
   }
 }
 
-// Sets the negative and zero flags based on the result of a computation
+// Sets the sweep_neg and zero flags based on the result of a computation
 // Can't set carry and overflow flag here (i think?) because they are set
 // differently depending on the instruction
 inline void cpu_set_nz(nes_t *nes, u8 result) {
@@ -860,7 +860,7 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
       printf("dump_cpu: invalid operand count, wtf?\n");
       exit(EXIT_FAILURE);
   }
-  fprintf(log_f, " %s", opcode_tos(opcode));
+  fprintf(log_f, " %s", cpu_opcode_tos(opcode));
   switch (mode) {
     case ABS:
       // JSR and JMP absolute shouldn't display val @ address

@@ -266,7 +266,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
   else {
     // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
     // detection. Check that here
-    // TODO: Don't trigger sprite zero hit when the left-side clipping window is enabled
+    // TODO: Don't trigger sprite zero hit when the left-side clipping window is sweep_enabled
     if (active_spr.sprite0 && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT))
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
     final_pixel = spr_has_priority ? ppu_get_palette_color(ppu, spr_color_idx)
@@ -361,7 +361,7 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
   }
 
   // **** V/T updates and scrolling ****
-  if (SCANLINE >= 0 && SCANLINE <= 239) {
+  if ((SCANLINE >= 0 && SCANLINE <= 239)) {
     if (DOT >= 1 && DOT <= 256)
       ppu_increment_scroll_x(ppu);
     if (DOT == 256)
