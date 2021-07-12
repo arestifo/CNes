@@ -11,6 +11,11 @@ const u8 SQUARE_SEQ[4][8] = {{0, 1, 0, 0, 0, 0, 0, 0},
                              {0, 1, 1, 1, 1, 0, 0, 0},
                              {1, 0, 0, 1, 1, 1, 1, 1}};
 
+//const u8 SQUARE_SEQ[4][8] = {{0, 0, 0, 0, 0, 0, 0, 1},
+//                             {0, 0, 0, 0, 0, 0, 1, 1},
+//                             {0, 0, 0, 0, 1, 1, 1, 1},
+//                             {1, 1, 1, 1, 1, 1, 0, 0}};
+
 const u8 TRIANGLE_SEQ[32] = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
                              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
 
@@ -61,12 +66,15 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       apu->pulse1.timer |= val;
       break;
     case 0x4003:
-      // Pulse 1 length counter load/timer high 3 bits TODO: reset duty and start envelope
+      // Pulse 1 length counter load/timer high 3 bits
       apu->pulse1.timer &= ~(7 << 8);
       apu->pulse1.timer |= (val & 7) << 8;
 
       apu->pulse1.lc_idx = val >> 3;
       apu->pulse1.lc = LC_LENGTHS[apu->pulse1.lc_idx];
+
+      // Restart sequence but not divider (seq_c) TODO: restart envelope
+      apu->pulse1.seq_idx = 0;
       break;
     case 0x4004:
       // Pulse 2 volume parameters: DDLC NNNN
@@ -88,17 +96,20 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       apu->pulse2.timer |= val;
       break;
     case 0x4007:
-      // Pulse 2 length counter load/timer high 3 bits TODO: reset duty and start envelope
+      // Pulse 2 length counter load/timer high 3 bits
       apu->pulse2.timer &= ~(7 << 8);
       apu->pulse2.timer |= (val & 7) << 8;
 
       apu->pulse2.lc_idx = val >> 3;
       apu->pulse2.lc = LC_LENGTHS[apu->pulse2.lc_idx];
+
+      // Restart sequence but not divider (seq_c) TODO: restart envelope
+      apu->pulse2.seq_idx = 0;
       break;
     case 0x4008:
       // Triangle linear counter control/lc halt and linear counter reload value
-      apu->triangle.lc_disable = val >> 7;
-      apu->triangle.cnt_reload_val = val & 0x7F;
+      apu->triangle.control_flag = val >> 7;
+      apu->triangle.linc_reload_val = val & 0x7F;
       break;
     case 0x400A:
       // Triangle timer low 8 bits
@@ -106,12 +117,14 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       apu->triangle.timer |= val;
       break;
     case 0x400B:
-      // Triangle length counter load TODO: reload linear counter
+      // Triangle length counter load
       apu->triangle.timer &= ~(7 << 8);
       apu->triangle.timer |= (val & 7) << 8;
 
       apu->triangle.lc_idx = val >> 3;
       apu->triangle.lc = LC_LENGTHS[apu->triangle.lc_idx];
+
+      apu->triangle.linc_reload = true;
       break;
     case 0x400C:
       apu->noise.lc_disable = val >> 5 & 1;
@@ -174,8 +187,95 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
   }
 }
 
+// Mixes raw channel output into a signed 16-bit sample
+static inline s16
+apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dmc_out) {
+  f64 square_out = pulse_table[pulse1_out + pulse2_out];
+  f64 tnd_out = tnd_table[3 * triangle_out + 2 * noise_out + dmc_out];
+
+  // Scale sample from [0.0...1.0] to [0...INT16_MAX] TODO: Is 0 the correct lower bound?
+//  assert(square_out + tnd_out <= 1.0);
+//  assert(square_out + tnd_out >= 0.0);
+  return (s16) ((square_out + tnd_out) * 8192);
+}
+
+// Increment APU waveform period counter with proper wrap around
+// Pulse channel sequence length is 8, triangle is 32; noise *frequency* is from a 16-entry lookup table
+static inline void apu_increment_seq_c(u32 *seq_c, u8 *seq_idx, u32 seq_len, u32 smp_per_sec) {
+//  if (*seq_c == smp_per_sec - 1) {
+  if (*seq_c == smp_per_sec) {
+    *seq_c = 0;
+    *seq_idx = (*seq_idx + 1) % seq_len;
+  } else {
+    *seq_c += 1;
+  }
+}
+
+static void apu_render_audio(apu_t *apu) {
+  // Need a quarter frame's worth of audio
+  const u32 BYTES_PER_SAMPLE = apu->audio_spec.channels * sizeof(s16);
+
+  // Sequence should loop once every `sample_rate / tone_hz` samples
+  const u32 PULSE1_FREQ = NTSC_CPU_SPEED / (apu->pulse1.timer + 1) / 2;
+  const u32 PULSE2_FREQ = NTSC_CPU_SPEED / (apu->pulse2.timer + 1) / 2;
+  const u32 TRIANGLE_FREQ = NTSC_CPU_SPEED / (apu->triangle.timer + 1);
+
+  const u32 PULSE1_SMP_PER_SEQ = apu->audio_spec.freq / PULSE1_FREQ;
+  const u32 PULSE2_SMP_PER_SEQ = apu->audio_spec.freq / PULSE2_FREQ;
+  const u32 TRIANGLE_SMP_PER_SEQ = apu->audio_spec.freq / TRIANGLE_FREQ;
+
+  // **** Render num_samples worth of audio data and queue it ****
+  u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
+  u32 pulse1_seq_c = 0, pulse2_seq_c = 0, triangle_seq_c = 0;
+  for (int smp_n = 0; smp_n < apu->audio_spec.samples; smp_n++) {
+    // **** Pulse 1 synth ****
+    // TODO: Envelope and sweep units
+    if (apu->pulse1.lc > 0 && apu->pulse1.timer > 7 && apu->status.pulse1_enable) {
+      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * 10;  // TODO
+      apu_increment_seq_c(&pulse1_seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
+    }
+
+    // **** Pulse 2 synth ****
+    // TODO: Envelope and sweep unit
+    if (apu->pulse2.lc > 0 && apu->pulse2.timer > 7 && apu->status.pulse2_enable) {
+      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * 10;  // TODO
+      apu_increment_seq_c(&pulse2_seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
+    }
+
+    // **** Triangle synth ****
+    if (apu->triangle.lc > 0 && apu->triangle.linc > 0) {
+      triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
+      apu_increment_seq_c(&triangle_seq_c, &apu->triangle.seq_idx,
+                          32, TRIANGLE_SMP_PER_SEQ);
+    }
+
+    // **** Noise synth ****
+    // TODO
+//    noise_out = 8;
+//    dmc_out = 64;
+
+    // Mix channels together to get the final sample
+    s16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+    if (SDL_GetQueuedAudioSize(apu->device_id) < apu->audio_spec.samples * 4)
+      SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
+  }
+}
+
 static void apu_quarter_frame_tick(apu_t *apu) {
   // TODO: Clock envelopes and triangle linear counter
+  // *********** Clock triangle linear counter ***********
+  if (apu->triangle.linc_reload) {
+    apu->triangle.linc = apu->triangle.linc_reload_val;
+  } else {
+    if (apu->triangle.linc > 0)
+      apu->triangle.linc--;
+  }
+
+  if (!apu->triangle.control_flag)
+    apu->triangle.linc_reload = false;
+
+  // Render and queue a quarter-frame chunk of audio
+  apu_render_audio(apu);
 }
 
 static void apu_half_frame_tick(apu_t *apu) {
@@ -187,84 +287,11 @@ static void apu_half_frame_tick(apu_t *apu) {
     apu->pulse2.lc--;
   if (!apu->noise.lc_disable && apu->noise.lc > 0)
     apu->noise.lc--;
-  if (!apu->triangle.lc_disable && apu->triangle.lc > 0)
+  if (!apu->triangle.control_flag && apu->triangle.lc > 0)
     apu->triangle.lc--;
 
   // *********** Clock sweep units ***********
   // TODO: Clock sweep units
-}
-
-// Mixes raw channel output into a signed 16-bit sample
-static inline s16
-apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dmc_out) {
-  f64 square_out = pulse_table[pulse1_out + pulse2_out];
-  f64 tnd_out = tnd_table[3 * triangle_out + 2 * noise_out + dmc_out];
-
-  // Scale sample from [0.0...1.0] to [0...INT16_MAX] TODO: Is 0 the correct lower bound?
-//  assert(square_out + tnd_out <= 1.0);
-//  assert(square_out + tnd_out >= 0.0);
-  return (s16) ((square_out + tnd_out) * INT16_MAX - 1);
-}
-
-// Increment APU waveform period counter with proper wrap around
-// Pulse channel sequence length is 8, triangle is 32; noise *frequency* is from a 16-entry lookup table
-static inline void apu_increment_seq_c(u32 *seq_c, u8 *seq_idx, u32 seq_len, u32 smp_per_sec) {
-  if (*seq_c == smp_per_sec - 1) {
-    *seq_c = 0;
-    *seq_idx = (*seq_idx + 1) % seq_len;
-  } else {
-    *seq_c += 1;
-  }
-}
-
-static void apu_render_audio(void *userdata, u8 *stream, s32 len) {
-  apu_t *apu = (apu_t *) userdata;
-  s16 *buffer = (s16 *) stream;
-
-  memset(buffer, 0, len);
-
-  // Audio format is signed 16bit, so we have to render len / 2 samples
-  // Sequence should loop one every `sample_rate / tone_hz` samples
-  const u32 PULSE1_FREQ = NTSC_CPU_SPEED / (16 * (apu->pulse1.timer + 1));
-  const u32 PULSE2_FREQ = NTSC_CPU_SPEED / (16 * (apu->pulse2.timer + 1));
-  const u32 TRIANGLE_FREQ = NTSC_CPU_SPEED / (32 * (apu->triangle.timer + 1));
-
-  const u32 PULSE1_SMP_PER_SEQ = apu->audio_spec.freq / PULSE1_FREQ;
-  const u32 PULSE2_SMP_PER_SEQ = apu->audio_spec.freq / PULSE2_FREQ;
-  const u32 TRIANGLE_SMP_PER_SEQ = apu->audio_spec.freq / TRIANGLE_FREQ;
-
-  u8 pulse1_seq_idx = 0, pulse2_seq_idx = 0, triangle_seq_idx = 0, noise_seq_idx = 0;
-  u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
-  u32 pulse1_seq_c = 0, pulse2_seq_c = 0, triangle_seq_c = 0;
-  for (int smp_n = 0; smp_n < len / 2; smp_n++) {
-    // **** Pulse 1 synth ****
-    // TODO: Envelope and sweep unit
-    if (apu->pulse1.lc > 0) {
-      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][pulse1_seq_idx];
-      apu_increment_seq_c(&pulse1_seq_c, &pulse1_seq_idx, 8, PULSE1_SMP_PER_SEQ);
-    }
-
-    // **** Pulse 2 synth ****
-    // TODO: Envelope and sweep unit
-    if (apu->pulse2.lc > 0) {
-      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][pulse2_seq_idx];
-      apu_increment_seq_c(&pulse2_seq_c, &pulse2_seq_idx, 8, PULSE2_SMP_PER_SEQ);
-    }
-
-    // **** Triangle synth ****
-    if (apu->triangle.lc > 0) {
-      triangle_out = TRIANGLE_SEQ[triangle_seq_idx];
-      apu_increment_seq_c(&triangle_seq_c, &triangle_seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
-    }
-
-    // **** Noise 1 synth ****
-    // TODO
-    noise_out = 8;
-    dmc_out = 64;
-
-    // Mix channels together to get the final sample
-    buffer[smp_n] = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-  }
 }
 
 // Increment APU frame counter. Called approximately 240 times per second
@@ -311,7 +338,6 @@ static void apu_init_lookup_tables() {
   // Approximation of NES DAC mixer from http://nesdev.com/apu_ref.txt
   // **** Pulse channels ****
   for (int i = 0; i < 31; i++) {
-    // Need to convert output value [0.0...1.0] to sample [-32768...32767]
     pulse_table[i] = 95.52 / (8128.0 / i + 100);
   }
 
@@ -324,16 +350,8 @@ static void apu_init_lookup_tables() {
 void apu_init(nes_t *nes, s32 sample_rate, u32 buf_len) {
   apu_t *apu = nes->apu;
 
-  apu->pulse1.sweep_c = 0;
-  apu->pulse2.sweep_c = 0;
-  apu->pulse1.lc = 0;
-  apu->pulse2.lc = 0;
-  apu->triangle.lc = 0;
-  apu->noise.lc = 0;
-  apu->frame_counter.step = 0;
-  apu->frame_counter.divider = 0;
-  apu->frame_interrupt = false;
-  apu->ticks = 0;
+  // Initialize all APU state to zero
+  memset(apu, 0, sizeof *apu);
 
   // Request audio spec. Init code based on
   // https://stackoverflow.com/questions/10110905/simple-sound-wave-generator-with-sdl-in-c
@@ -341,8 +359,8 @@ void apu_init(nes_t *nes, s32 sample_rate, u32 buf_len) {
   want.freq = sample_rate;
   want.format = AUDIO_S16SYS;
   want.channels = 1;
-  want.callback = apu_render_audio;
-  want.userdata = apu;
+  want.callback = NULL;
+  want.userdata = NULL;
   want.samples = buf_len;
 
   if (!(apu->device_id = SDL_OpenAudioDevice(NULL, 0, &want, &apu->audio_spec, 0)))

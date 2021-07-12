@@ -181,8 +181,10 @@ static u32 ppu_render_pixel(nes_t *nes) {
       // **** Extract attribute table bits ****
       // Each attribute table byte controls four sub-tiles of two bytes each
       // Find the dot and scanline "quadrants" of the current tile
-      u8 attrib_quadx = coarse_x % 4 >= 2;
-      u8 attrib_quady = coarse_y % 4 >= 2;
+//      u8 attrib_quadx = coarse_x % 4 >= 2;
+//      u8 attrib_quady = coarse_y % 4 >= 2;
+      u8 attrib_quadx = !!(coarse_x & 2);
+      u8 attrib_quady = !!(coarse_y & 2);
 
       // Get the two attribute bits (colors) from the calculated quadrants
       u8 attrib_idx_shift = 2 * (attrib_quadx | (attrib_quady << 1));

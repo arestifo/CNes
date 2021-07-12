@@ -35,6 +35,10 @@ typedef struct apu {
 
     // Length counter
     u8 lc;
+
+    // Where in the output sequence the channel currently is
+    u8 seq_idx;
+    u32 seq_c;
   } pulse1;
 
   // ******************** Pulse channel 2 ********************
@@ -60,21 +64,31 @@ typedef struct apu {
     // Sweep unit
     u8 sweep_c;
     u8 lc;
+
+    // Where in the output sequence the channel currently is
+    u8 seq_idx;
+    u32 seq_c;
   } pulse2;
 
   // ******************** Triangle channel ********************
   struct {
     // Linear counter flags/parameters
-    u8 lc_disable: 1;
-    u8 cnt_reload_val: 7;
+    u8 control_flag: 1;
+    u8 linc_reload_val: 7;
 
     // Length counter load value/timer high
     u8 lc_idx: 5;
 
     u16 timer: 11;
 
+    // Linear/length counter
     u8 lc;
     u8 linc;
+    bool linc_reload;
+
+    // Where in the output sequence the channel currently is
+    u8 seq_idx;
+    u32 seq_c;
   } triangle;
 
   // ******************** Noise channel ********************
