@@ -9,14 +9,24 @@
 // Number of CPU ticks per 1/240th of a second. This is the basis of all APU timing
 #define NTSC_TICKS_PER_SEQ (NTSC_CPU_SPEED / 240)
 
+typedef struct envelope {
+  u8 loop: 1;
+  u8 disable: 1;
+  u8 n: 4;
+
+  // Envelope divider
+  u8 env_volume;
+  u8 env_seq_i;
+  u32 env_c;
+} envelope_t;
+
 typedef struct apu {
   // ******************** Pulse channel 1 ********************
   struct {
     // Duty cycle/volume parameters
     u8 duty: 2;
     u8 lc_disable: 1;
-    u8 const_v: 1;
-    u8 envelope: 4;
+    envelope_t env;
 
     // Sweep unit parameters
     u8 sweep_enabled: 1;
@@ -46,8 +56,7 @@ typedef struct apu {
     // Duty cycle/volume parameters
     u8 duty: 2;
     u8 lc_disable: 1;
-    u8 const_v: 1;
-    u8 envelope: 4;
+    envelope_t env;
 
     // Sweep unit parameters
     u8 sweep_enabled: 1;
@@ -96,8 +105,7 @@ typedef struct apu {
     // Volume parameters
     u8 r1_unused: 2;
     u8 lc_disable: 1;
-    u8 const_v: 1;
-    u8 envelope: 4;
+    envelope_t env;
 
     // Noise channel parameters
     u8 mode: 1;
@@ -109,7 +117,7 @@ typedef struct apu {
     u8 r3_unused: 3;
 
     u8 lc;
-    u8 shift_reg;
+    u16 shift_reg: 15;
   } noise;
 
   // ******************** DMC channel ********************

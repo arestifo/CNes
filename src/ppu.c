@@ -9,7 +9,6 @@ static bool write_toggle = false;
 static u16 ppu_decode_addr(ppu_t *ppu, u16 addr);
 
 // Reads in a .pal file as the NES system palette
-// TODO: Generate palettes (low priority)
 static void ppu_palette_init(nes_t *nes, char *palette_fn) {
   // Palletes are stored as 64 sets of three integers for r, g, and b intensities
   FILE *palette_f;
@@ -35,16 +34,10 @@ inline bool ppu_rendering_enabled(ppu_t *ppu) {
 }
 // Palette from http://www.firebrandx.com/nespalette.html
 void ppu_init(nes_t *nes) {
-  ppu_t *ppu;
+  ppu_t *ppu = nes->ppu;
 
-  ppu = nes->ppu;
-  ppu->ticks = 0;
-  ppu->frameno = 0;
-  ppu->vram_addr = 0x0000;
-  ppu->temp_addr = 0x0000;
-  ppu->dot = 0;
-  ppu->scanline = 0;
-  ppu->fine_x = 0;
+  // Initialize all PPU fields to zero
+  memset(ppu, 0, sizeof *ppu);
 
   // Set up PPU address space
   // Load CHR ROM (pattern tables) into PPU $0000-$1FFF
@@ -181,8 +174,6 @@ static u32 ppu_render_pixel(nes_t *nes) {
       // **** Extract attribute table bits ****
       // Each attribute table byte controls four sub-tiles of two bytes each
       // Find the dot and scanline "quadrants" of the current tile
-//      u8 attrib_quadx = coarse_x % 4 >= 2;
-//      u8 attrib_quady = coarse_y % 4 >= 2;
       u8 attrib_quadx = !!(coarse_x & 2);
       u8 attrib_quady = !!(coarse_y & 2);
 
