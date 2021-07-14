@@ -4,6 +4,7 @@
 #include "../include/cart.h"
 #include "../include/apu.h"
 
+// Split PRG and CHR ROM into 4K pages and swap their respective pointers around
 void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   if (addr >= 0x2000 && addr <= 0x3FFF) {
     ppu_reg_write(nes, addr % 8, val);
@@ -25,10 +26,8 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
 }
 
 u8 cpu_read8(nes_t *nes, u16 addr) {
-  cpu_t *cpu;
-  u8 retval;
+  cpu_t *cpu = nes->cpu;
 
-  cpu = nes->cpu;
   if (addr <= 0x1FFF) {
     // 2KB internal ram
     return cpu->mem[addr % 0x0800];
@@ -36,7 +35,7 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     // PPU registers ($2000-$2007) are mirrored from $2008-$3FFF
     return ppu_reg_read(nes, addr & 7);
   } else if (addr == CONTROLLER1_PORT) {
-    retval = nes->ctrl1_sr;
+    u8 retval = nes->ctrl1_sr;
 
     nes->ctrl1_sr >>= 1;
 
@@ -52,7 +51,6 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
   } else if (addr >= 0x4020 && addr <= 0xFFFF) {
     // TODO: PRG ROM, PRG RAM, and mapper registers
 
-    // 16K Mapper 0 ($C000-$FFFF is a mirror of $8000-$BFFF)
     // TODO: THIS IS NOT EXTENSIBLE! USE MAPPER FUNCTIONS INSTEAD
     if (addr >= 0x8000 && addr <= 0xFFFF) {
       if (nes->cart->header.prgrom_n == 1)
@@ -70,23 +68,19 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
 
 // Write 16-bit value to memory in little-endian format
 void cpu_write16(nes_t *nes, u16 addr, u16 val) {
-  u8 low, high;
+  u8 lo = val & 0x00FF;
+  u8 hi = (val & 0xFF00) >> 8;
 
-  low = val & 0x00FF;
-  high = (val & 0xFF00) >> 8;
-
-  cpu_write8(nes, addr, low);
-  cpu_write8(nes, addr + 1, high);
+  cpu_write8(nes, addr, lo);
+  cpu_write8(nes, addr + 1, hi);
 }
 
 // Read 16-bit value from memory stored in little-endian format
 u16 cpu_read16(nes_t *nes, u16 addr) {
-  u8 low, high;
+  u8 lo = cpu_read8(nes, addr);
+  u8 hi = cpu_read8(nes, addr + 1);
 
-  low = cpu_read8(nes, addr);
-  high = cpu_read8(nes, addr + 1);
-
-  return low | (high << 8);
+  return lo | (hi << 8);
 }
 
 void cpu_push8(nes_t *nes, u8 val) {
@@ -94,13 +88,11 @@ void cpu_push8(nes_t *nes, u8 val) {
 }
 
 void cpu_push16(nes_t *nes, u16 val) {
-  u8 low, high;
+  u8 lo = val & 0x00FF;
+  u8 hi = (val & 0xFF00) >> 8;
 
-  low = val & 0x00FF;
-  high = (val & 0xFF00) >> 8;
-
-  cpu_write8(nes, STACK_BASE + nes->cpu->sp--, high);
-  cpu_write8(nes, STACK_BASE + nes->cpu->sp--, low);
+  cpu_write8(nes, STACK_BASE + nes->cpu->sp--, hi);
+  cpu_write8(nes, STACK_BASE + nes->cpu->sp--, lo);
 }
 
 u8 cpu_pop8(nes_t *nes) {
@@ -108,10 +100,8 @@ u8 cpu_pop8(nes_t *nes) {
 }
 
 u16 cpu_pop16(nes_t *nes) {
-  u8 low, high;
+  u8 lo = cpu_read8(nes, STACK_BASE + ++nes->cpu->sp);
+  u8 hi = cpu_read8(nes, STACK_BASE + ++nes->cpu->sp);
 
-  low = cpu_read8(nes, STACK_BASE + ++nes->cpu->sp);
-  high = cpu_read8(nes, STACK_BASE + ++nes->cpu->sp);
-
-  return low | (high << 8);
+  return lo | (hi << 8);
 }

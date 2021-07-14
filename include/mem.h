@@ -4,7 +4,6 @@
 #include "nes.h"
 
 // cpu_xxx functions deal with CPU memory
-// TODO: Call mapper functions
 void cpu_write8(nes_t *nes, u16 addr, u8 val);
 void cpu_write16(nes_t *nes, u16 addr, u16 val);
 u8   cpu_read8(nes_t *nes, u16 addr);

@@ -1,5 +1,6 @@
 #include "../include/apu.h"
 #include "../include/cpu.h"
+#include "../include/util.h"
 
 const u8 LC_LENGTHS[32] = {0x0A, 0xFE, 0x14, 0x02, 0x28, 0x04, 0x50, 0x06, 0xA0, 0x08, 0x3C, 0x0A,
                            0x0E, 0x0C, 0x1A, 0x0E, 0x0C, 0x10, 0x18, 0x12, 0x30, 0x14, 0x60, 0x16,
@@ -55,10 +56,11 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       break;
     case 0x4001:
       // Pulse 1 sweep unit: EPPP NSSS
-      apu->pulse1.sweep_enabled = val >> 7;
-      apu->pulse1.sweep_period = val >> 4 & 7;
-      apu->pulse1.sweep_neg = val >> 3 & 1;
-      apu->pulse1.sweep_shift = val & 7;
+      apu->pulse1.sweep.enabled = val >> 7;
+      apu->pulse1.sweep.period = val >> 4 & 7;
+      apu->pulse1.sweep.negate = val >> 3 & 1;
+      apu->pulse1.sweep.shift = val & 7;
+      apu->pulse1.sweep.reload = true;
       break;
     case 0x4002:
       // Pulse 1 timer low 8 bits
@@ -73,8 +75,10 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       apu->pulse1.lc_idx = val >> 3;
       apu->pulse1.lc = LC_LENGTHS[apu->pulse1.lc_idx];
 
-      // Restart sequence but not divider (seq_c) TODO: restart env
+      // Restart sequence but not divider (seq_c)
       apu->pulse1.seq_idx = 0;
+      apu->pulse1.env.env_seq_i = 0;
+      apu->pulse1.env.env_c = 0;
       break;
     case 0x4004:
       // Pulse 2 volume parameters: DDLC NNNN
@@ -87,10 +91,11 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       break;
     case 0x4005:
       // Pulse 2 sweep unit: EPPP NSSS
-      apu->pulse2.sweep_enabled = val >> 7;
-      apu->pulse2.sweep_period = val >> 4 & 7;
-      apu->pulse2.sweep_neg = val >> 3 & 1;
-      apu->pulse2.sweep_shift = val & 7;
+      apu->pulse2.sweep.enabled = val >> 7;
+      apu->pulse2.sweep.period = val >> 4 & 7;
+      apu->pulse2.sweep.negate = val >> 3 & 1;
+      apu->pulse2.sweep.shift = val & 7;
+      apu->pulse2.sweep.reload = true;
       break;
     case 0x4006:
       // Pulse 2 timer low 8 bits
@@ -105,8 +110,10 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       apu->pulse2.lc_idx = val >> 3;
       apu->pulse2.lc = LC_LENGTHS[apu->pulse2.lc_idx];
 
-      // Restart sequence but not divider (seq_c) TODO: restart env
+      // Restart sequence but not divider (seq_c)
       apu->pulse2.seq_idx = 0;
+      apu->pulse2.env.env_seq_i = 0;
+//      apu->pulse2.env.env_c = 0;
       break;
     case 0x4008:
       // Triangle linear counter control/lc halt and linear counter reload value
@@ -142,9 +149,11 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       apu->noise.period = NOISE_PERIOD[val & 0xF];
       break;
     case 0x400F:
-      // Noise length counter load TODO: start env
+      // Noise length counter load
       apu->noise.lc_idx = val >> 3;
       apu->noise.lc = LC_LENGTHS[apu->noise.lc_idx];
+      apu->noise.env.env_seq_i = 0;
+      apu->noise.env.env_c = 0;
       break;
     case 0x4010:
       // DMC control flags
@@ -204,7 +213,8 @@ apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dm
 
 // Increment APU waveform period counter with proper wrap around
 // Pulse channel sequence length is 8, triangle is 32; noise *frequency* is from a 16-entry lookup table
-static inline void apu_clock_seq_counter(u32 *seq_c, u8 *seq_idx, u32 seq_len, u32 smp_per_sec) {
+static inline void
+apu_clock_sequence_counter(u32 *seq_c, u8 *seq_idx, u32 seq_len, u32 smp_per_sec) {
   if (*seq_c == smp_per_sec) {
     *seq_c = 0;
     *seq_idx = (*seq_idx + 1) % seq_len;
@@ -213,20 +223,45 @@ static inline void apu_clock_seq_counter(u32 *seq_c, u8 *seq_idx, u32 seq_len, u
   }
 }
 
-static inline void apu_clock_env_counter(envelope_t *env) {
+static inline void apu_clock_envelope(envelope_t *env) {
   const u32 ENV_PERIOD = env_periods[env->env_seq_i];
 
   env->env_volume = ENVELOPE_SEQ[env->env_seq_i];
-  apu_clock_seq_counter(&env->env_c, &env->env_seq_i, 16, ENV_PERIOD);
+  apu_clock_sequence_counter(&env->env_c, &env->env_seq_i, 16, ENV_PERIOD);
 }
 
-static inline u8 apu_get_env_volume(envelope_t *env) {
-  // If the envelope disable flag is set, the volume is the envelope's n value
-  if (env->disable)
-    return env->n;
+// Clock an APU su unit, updating a period `target_pd` with its output
+static inline void
+apu_clock_sweep_unit(sweep_unit_t *su, u16 *target_pd, s32 (*negate_func)(s32)) {
+  // Calculate the new period after shifting
+  u16 new_pd = *target_pd >> su->shift;
 
+  if (su->negate)
+    new_pd = negate_func(new_pd);
+
+  new_pd += *target_pd;
+
+  // Sweep unit mutes the channel if target_pd < 8 OR new_pd > 0x7FF
+  bool muting = *target_pd < 8 || new_pd > 0x7FF;
+
+  // Adjust target period ONLY if the divider's count is zero, su is enabled, and the su unit
+  // is not muting the channel.
+  if (su->sweep_c == 0 && su->enabled && !muting)
+    *target_pd = new_pd;
+
+  // Increment su unit divider
+  if (su->sweep_c == 0 || su->reload) {
+    su->sweep_c = su->period;
+    su->reload = false;
+  } else {
+    su->sweep_c--;
+  }
+}
+
+static inline u8 apu_get_envelope_volume(envelope_t *env) {
+  // If the envelope disable flag is set, the volume is the envelope's n value
   // Else, return the envelope's current volume
-  return env->env_volume;
+  return env->disable ? env->n : env->env_volume;
 }
 
 static void apu_render_audio(apu_t *apu) {
@@ -234,47 +269,64 @@ static void apu_render_audio(apu_t *apu) {
   const u32 BYTES_PER_SAMPLE = apu->audio_spec.channels * sizeof(s16);
 
   // Sequence should loop once every `sample_rate / tone_hz` samples
-  const u32 PULSE1_FREQ = NTSC_CPU_SPEED / (apu->pulse1.timer + 1) / 2;
-  const u32 PULSE2_FREQ = NTSC_CPU_SPEED / (apu->pulse2.timer + 1) / 2;
-  const u32 TRIANGLE_FREQ = NTSC_CPU_SPEED / (apu->triangle.timer + 1);
+  // TODO: implement this with lookup tables
+  const f64 PULSE1_FREQ = NTSC_CPU_SPEED / 2.0 / (apu->pulse1.timer + 1);
+  const f64 PULSE2_FREQ = NTSC_CPU_SPEED / 2.0 / (apu->pulse2.timer + 1);
+  const f64 TRIANGLE_FREQ = NTSC_CPU_SPEED * 1.0 / (apu->triangle.timer + 1);
+  const f64 NOISE_FREQ = NTSC_CPU_SPEED * 1.0 / apu->noise.period;
 
-  const u32 PULSE1_SMP_PER_SEQ = apu->audio_spec.freq / PULSE1_FREQ;
-  const u32 PULSE2_SMP_PER_SEQ = apu->audio_spec.freq / PULSE2_FREQ;
-  const u32 TRIANGLE_SMP_PER_SEQ = apu->audio_spec.freq / TRIANGLE_FREQ;
-
+  const u32 PULSE1_SMP_PER_SEQ = (u32) (apu->audio_spec.freq / PULSE1_FREQ);
+  const u32 PULSE2_SMP_PER_SEQ = (u32) (apu->audio_spec.freq / PULSE2_FREQ);
+  const u32 TRIANGLE_SMP_PER_SEQ = (u32) (apu->audio_spec.freq / TRIANGLE_FREQ);
+  const u32 NOISE_SMP_PER_SEQ = (u32) (apu->audio_spec.freq / NOISE_FREQ);
   // **** Render num_samples worth of audio data and queue it ****
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
-  u32 pulse1_seq_c = 0, pulse2_seq_c = 0, triangle_seq_c = 0;
+  u32 pulse1_seq_c = 0, pulse2_seq_c = 0, triangle_seq_c = 0, noise_seq_c = 0;
+//  const u32 SAMPLES_PER_QUARTER_FRAME = apu->audio_spec.freq / 240 * 16;
   for (int smp_n = 0; smp_n < apu->audio_spec.samples; smp_n++) {
     // **** Pulse 1 synth ****
     // TODO: Sweep unit
     if (apu->pulse1.lc > 0 && apu->pulse1.timer > 7 && apu->status.pulse1_enable) {
-      u8 pulse1_volume = apu_get_env_volume(&apu->pulse1.env);
-      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * pulse1_volume;
+      const u8 PULSE1_VOLUME = apu_get_envelope_volume(&apu->pulse1.env);
+      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * PULSE1_VOLUME;
 
-      apu_clock_seq_counter(&pulse1_seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
+      apu_clock_sequence_counter(&pulse1_seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
     }
 
     // **** Pulse 2 synth ****
     // TODO: Sweep unit
     if (apu->pulse2.lc > 0 && apu->pulse2.timer > 7 && apu->status.pulse2_enable) {
-      u8 pulse2_volume = apu_get_env_volume(&apu->pulse2.env);
-      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * pulse2_volume;
+      const u8 PULSE2_VOLUME = apu_get_envelope_volume(&apu->pulse2.env);
+      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * PULSE2_VOLUME;
 
-      apu_clock_seq_counter(&pulse2_seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
+      apu_clock_sequence_counter(&pulse2_seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
     }
 
     // **** Triangle synth ****
-    if (apu->triangle.lc > 0 && apu->triangle.linc > 0) {
+    if (apu->triangle.lc > 0 && apu->triangle.linc > 0 && apu->status.triangle_enable) {
       triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
 
-      apu_clock_seq_counter(&triangle_seq_c, &apu->triangle.seq_idx,
-                            32, TRIANGLE_SMP_PER_SEQ);
+      apu_clock_sequence_counter(&triangle_seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
     }
 
     // **** Noise synth ****
-    if (apu->noise.lc > 0 && !(apu->noise.shift_reg & 1)) {
+    if (apu->noise.lc > 0 && apu->status.noise_enable) {
+      if (noise_seq_c == NOISE_SMP_PER_SEQ) {
+        noise_seq_c = 0;
 
+        // Shift noise shift register
+        const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
+        u8 feedback_bit = !!((apu->noise.shift_reg & 1) ^
+                             GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM));
+        apu->noise.shift_reg >>= 1;
+        SET_BIT(apu->noise.shift_reg, 14, feedback_bit);
+      } else {
+        noise_seq_c++;
+      }
+
+      // Increment noise counter and shift noise shift register
+      if (!(apu->noise.shift_reg & 1))
+        noise_out = apu_get_envelope_volume(&apu->noise.env);
     }
 
     // Mix channels together to get the final sample
@@ -297,9 +349,9 @@ static void apu_quarter_frame_tick(apu_t *apu) {
     apu->triangle.linc_reload = false;
 
   // *********** Clock envelopes ***********
-  apu_clock_env_counter(&apu->pulse1.env);
-  apu_clock_env_counter(&apu->pulse2.env);
-  apu_clock_env_counter(&apu->noise.env);
+  apu_clock_envelope(&apu->pulse1.env);
+  apu_clock_envelope(&apu->pulse2.env);
+  apu_clock_envelope(&apu->noise.env);
 
   // *********** Render and queue some audio ***********
   apu_render_audio(apu);
@@ -318,7 +370,8 @@ static void apu_half_frame_tick(apu_t *apu) {
     apu->triangle.lc--;
 
   // *********** Clock sweep units ***********
-  // TODO: Clock sweep units
+  apu_clock_sweep_unit(&apu->pulse1.sweep, &apu->pulse1.timer, ones_complement);
+  apu_clock_sweep_unit(&apu->pulse2.sweep, &apu->pulse2.timer, twos_complement);
 }
 
 // Increment APU frame counter. Called approximately 240 times per second
@@ -383,6 +436,9 @@ void apu_init(nes_t *nes, s32 sample_rate, u32 buf_len) {
 
   // Initialize all APU state to zero
   memset(apu, 0, sizeof *apu);
+
+  apu->noise.shift_reg = 1;
+  apu->noise.period = NOISE_PERIOD[0];
 
   // Request audio spec. Init code based on
   // https://stackoverflow.com/questions/10110905/simple-sound-wave-generator-with-sdl-in-c

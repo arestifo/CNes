@@ -121,7 +121,6 @@ static u32 ppu_render_pixel(nes_t *nes) {
   u8 spr_color_idx = 0;
 
   // Sprite rendering metadata
-  sprite_t active_spr;
   bool spr_has_priority;
 
   // Get current position on the screen
@@ -200,47 +199,53 @@ static u32 ppu_render_pixel(nes_t *nes) {
   // Look through each sprite in the secondary OAM and compare their X-positions to the current PPU X
   bool show_spr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
   bool show_spr_left8 = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_LEFT8_BIT);
+  bool sprite_zerohit = false;
   if (show_spr) {
     if (cur_x > 7 || show_spr_left8) {
+      // Detect sprite zero hit
+      // TODO: Having two loops is not the most elegant solution
+      for (u8 i = 0; i < SEC_OAM_NUM_SPR; i++) {
+        if (ppu->sec_oam[i].sprite0) {
+          sprite_zerohit = true;
+          break;
+        }
+      }
+
       // Get the sprite to be shown from the secondary OAM.
       // Secondary OAM is initialized at the beginning of every scanline and contains the sprites to
-      // be shown on that scanline
-      // We count down from 7..0 because that is effectively how the NES does it
-      s8 active_spr_i = -1;
+      // be shown on that scanline.
       for (s8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
         sprite_t cur_spr = ppu->sec_oam[i];
         if (cur_spr.data.tile_idx) {
           if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8) {
-            active_spr_i = i;
+            // **** Get sprite characteristics ****
+            sprite_t active_spr = ppu->sec_oam[i];
+            u8 spr_fine_y = cur_y - active_spr.data.y_pos;
+            u8 spr_fine_x = cur_x - active_spr.data.x_pos;
+            bool flip_h = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPH_BIT);
+            bool flip_v = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPV_BIT);
+
+            // **** Get two pattern table sprite bytes ****
+            u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
+            u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
+            u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
+
+            u8 pt_val_lo = ppu_read(ppu, pt_addr);
+            u8 pt_val_hi = ppu_read(ppu, pt_addr + 8);
+
+            // **** Get the color bits: two from PT, two from sprite attributes ****
+            u8 pt_fine_x_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
+            u8 pt_color_bits = !!(pt_val_lo & pt_fine_x_mask) | !!(pt_val_hi & pt_fine_x_mask) << 1;
+            u8 attrib_color_bits = active_spr.data.attr & 3;
+            u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2) | 0x10);
+
+            // **** Get the final sprite color ****
+            spr_color_idx = palette_idx & 3 ? ppu_read(ppu, palette_idx) : 0;
+            spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
+
+            if (spr_color_idx) break;
           }
         }
-      }
-
-      if (active_spr_i >= 0) {
-        // **** Get sprite characteristics ****
-        active_spr = ppu->sec_oam[active_spr_i];
-        u8 spr_fine_y = cur_y - active_spr.data.y_pos;
-        u8 spr_fine_x = cur_x - active_spr.data.x_pos;
-        bool flip_h = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPH_BIT);
-        bool flip_v = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPV_BIT);
-
-        // **** Get two pattern table sprite bytes ****
-        u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
-        u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
-        u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
-
-        u8 pt_val_lo = ppu_read(ppu, pt_addr);
-        u8 pt_val_hi = ppu_read(ppu, pt_addr + 8);
-
-        // **** Get the color bits: two from PT, two from sprite attributes ****
-        u8 pt_fine_x_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
-        u8 pt_color_bits = !!(pt_val_lo & pt_fine_x_mask) | !!(pt_val_hi & pt_fine_x_mask) << 1;
-        u8 attrib_color_bits = active_spr.data.attr & 3;
-        u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2) | 0x10);
-
-        // **** Get the final sprite color ****
-        spr_color_idx = palette_idx & 3 ? ppu_read(ppu, palette_idx) : 0;
-        spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
       }
     }
   }
@@ -260,7 +265,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
     // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
     // detection. Check that here
     // TODO: Don't trigger sprite zero hit when the left-side clipping window is sweep_enabled
-    if (active_spr.sprite0 && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT))
+    if (sprite_zerohit && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT))
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
     final_pixel = spr_has_priority ? ppu_get_palette_color(ppu, spr_color_idx)
                                    : ppu_get_palette_color(ppu, bgr_color_idx);
@@ -373,6 +378,7 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       }
     }
   }
+
 
   // Increment PPU position
   ppu->ticks++;
@@ -538,7 +544,9 @@ inline u8 ppu_read(ppu_t *ppu, u16 addr) {
 }
 
 inline void ppu_write(ppu_t *ppu, u16 addr, u8 val) {
-  ppu->mem[ppu_decode_addr(ppu, addr)] = val;
+  const u16 WRITE_ADDR = ppu_decode_addr(ppu, addr);
+
+//  ppu->mem[WRITE_ADDR] = val;
 }
 
 void ppu_destroy(nes_t *nes) {
