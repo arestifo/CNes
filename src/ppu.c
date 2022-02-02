@@ -205,11 +205,14 @@ static u32 ppu_render_pixel(nes_t *nes) {
   if (show_spr) {
     if (cur_x > 7 || show_spr_left8) {
       // Detect sprite zero hit
-      // TODO: Having two loops is not the most elegant solution
-      for (u8 i = 0; i < SEC_OAM_NUM_SPR; i++) {
-        if (ppu->sec_oam[i].sprite0) {
-          sprite_zerohit = true;
-          break;
+      // sprite zero hit doesn't happen if background rendering is disabled
+      if (show_bgr) {
+        for (u8 i = 0; i < SEC_OAM_NUM_SPR; i++) {
+          sprite_t maybe_spr0 = ppu->sec_oam[i];
+          if (maybe_spr0.sprite0) {
+            sprite_zerohit = true;
+            break;
+          }
         }
       }
 
@@ -267,8 +270,10 @@ static u32 ppu_render_pixel(nes_t *nes) {
     // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
     // detection. Check that here
     // TODO: Don't trigger sprite zero hit when the left-side clipping window is sweep_enabled
-    if (sprite_zerohit && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT))
+    if (sprite_zerohit && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT)) {
+      printf("frame %llu: s0 hit at [%d, %d], bgr_idx=%d spr_idx=%d\n", ppu->frameno, cur_x, cur_y, bgr_color_idx, spr_color_idx);
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
+    }
     final_pixel = spr_has_priority ? ppu_get_palette_color(ppu, spr_color_idx)
                                    : ppu_get_palette_color(ppu, bgr_color_idx);
   }

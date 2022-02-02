@@ -29,7 +29,7 @@ void window_init(window_t *wnd) {
 }
 
 void window_update(window_t *wnd, nes_t *nes) {
-  // One row in the framebuffer is 4 * WINDOW_W bytes long (Framebuffer pixels are RGBA)
+  // One row in the framebuffer is 4 * WINDOW_W bytes long (Framebuffer pixels are ARGB)
   int pitch = 4 * WINDOW_W;
   u32 *pixels = NULL;
 

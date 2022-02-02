@@ -69,12 +69,12 @@ int main(int argc, char **argv) {
 
   // Logging
   // TODO: Make this more robust
-  char *cpu_log_fn = "../logs/cpu.log";
-  char *ppu_log_fn = "../logs/ppu.log";
-  remove(cpu_log_fn);
-  remove(ppu_log_fn);
-  nes.args->cpu_logf = nes_fopen(cpu_log_fn, "w");
-  nes.args->ppu_logf = nes_fopen(ppu_log_fn, "w");
+//  char *cpu_log_fn = "../logs/cpu.log";
+//  char *ppu_log_fn = "../logs/ppu.log";
+//  remove(cpu_log_fn);
+//  remove(ppu_log_fn);
+//  nes.args->cpu_logf = nes_fopen(cpu_log_fn, "w");
+//  nes.args->ppu_logf = nes_fopen(ppu_log_fn, "w");
 
   nes.args->cpu_log_output = false;
   nes.args->ppu_log_output = false;
@@ -111,12 +111,12 @@ int main(int argc, char **argv) {
 
   // Clean up
   window_destroy(&window);
-  nes_fclose(nes.args->cpu_logf);
-  nes_fclose(nes.args->ppu_logf);
+//  nes_fclose(nes.args->cpu_logf);
+//  nes_fclose(nes.args->ppu_logf);
   nes_destroy(&nes);
   SDL_Quit();
 
-  exit(EXIT_SUCCESS);
+  return 0;
 }
 
 #ifdef WIN32

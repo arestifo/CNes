@@ -27,6 +27,7 @@ FILE *nes_fopen(char *fn, char *mode) {
 
   if ((f = fopen(fn, mode)) == NULL) {
     perror("nes_fopen");
+    printf("nes_fopen: %s\n", fn);
     exit(EXIT_FAILURE);
   }
 
