@@ -14,7 +14,7 @@ void window_init(window_t *wnd) {
 
   // Create RGB pixel_surface from PPU rendered pixel_surface
   wnd->renderer = SDL_CreateRenderer(wnd->disp_window, -1,
-                                     SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+                                     SDL_RENDERER_ACCELERATED);
   if (!wnd->renderer)
     printf("window_init: SDL_GetRenderer() failed: %s\n", SDL_GetError());
 
@@ -35,6 +35,8 @@ void window_update(window_t *wnd, nes_t *nes) {
 
   // Grab rendering surface
   SDL_LockTexture(wnd->texture, NULL, (void **) &pixels, &pitch);
+  u32 last_ticks = SDL_GetTicks();
+  printf("frame!\n");
   while (!wnd->frame_ready) {
     cpu_tick(nes);
 
@@ -43,7 +45,7 @@ void window_update(window_t *wnd, nes_t *nes) {
       ppu_tick(nes, wnd, pixels);
     }
 
-    if (nes->apu->frame_counter.divider == NTSC_TICKS_PER_SEQ) {
+    if (nes->apu->frame_counter.divider == NTSC_TICKS_PER_SEQ / 4) {
       nes->apu->frame_counter.divider = 0;
       apu_tick(nes);
     } else {

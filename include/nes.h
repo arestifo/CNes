@@ -8,7 +8,12 @@
 #include <stdbool.h>
 #include <assert.h>
 
-#include "SDL.h"
+#ifdef WIN32
+  #include "SDL2/SDL.h"
+#else
+  #include "SDL.h"
+#endif
+
 #include "types.h"
 
 typedef struct cpu cpu_t;

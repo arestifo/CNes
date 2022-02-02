@@ -83,25 +83,30 @@ int main(int argc, char **argv) {
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);
 
   bool is_running = true;
+  u32 last_ticks = SDL_GetTicks();
   while (is_running) {
     // Main event polling loop
     // Also update the keyboard array so we can get input
-    while (SDL_PollEvent(&event)) {
-      switch (event.type) {
-        case SDL_QUIT:
-          is_running = false;
-          break;
-        case SDL_KEYDOWN:
-          keyboard_input(&nes, event.key.keysym.sym, true);
-          break;
-        case SDL_KEYUP:
-          keyboard_input(&nes, event.key.keysym.sym, false);
-          break;
-      }
-    }
+    if (SDL_GetTicks() - last_ticks > 1000 / 60.) {
+      last_ticks = SDL_GetTicks();
 
-    // Run the PPU & CPU until we have a frame ready to render to the screen
-    window_update(&window, &nes);
+      while (SDL_PollEvent(&event)) {
+        switch (event.type) {
+          case SDL_QUIT:
+            is_running = false;
+            break;
+          case SDL_KEYDOWN:
+            keyboard_input(&nes, event.key.keysym.sym, true);
+            break;
+          case SDL_KEYUP:
+            keyboard_input(&nes, event.key.keysym.sym, false);
+            break;
+        }
+      }
+
+      // Run the PPU & CPU until we have a frame ready to render to the screen
+      window_update(&window, &nes);
+    }
   }
 
   // Clean up
@@ -113,3 +118,15 @@ int main(int argc, char **argv) {
 
   exit(EXIT_SUCCESS);
 }
+
+#ifdef WIN32
+#include "Windows.h"
+
+//-----------------------------------------------------------------
+int CALLBACK WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+                     _In_ LPSTR lpCmdLine, _In_ int nCmdShow)
+//-----------------------------------------------------------------
+{
+    return main(__argc, __argv);
+}
+#endif // #ifdef WIN32
