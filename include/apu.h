@@ -3,12 +3,11 @@
 
 #include "nes.h"
 
-// NTSC CPU speed (~1.78 MHz)
+// NTSC CPU speed in Hz (~1.78 MHz)
 #define NTSC_CPU_SPEED 1789773
 
 // Number of CPU ticks per 1/240th of a second. This is the basis of all APU timing
-//#define NTSC_TICKS_PER_SEQ (NTSC_CPU_SPEED / 240)
-#define NTSC_TICKS_PER_SEQ (NTSC_CPU_SPEED / 192)
+#define NTSC_TICKS_PER_SEQ (NTSC_CPU_SPEED / 240)
 
 typedef struct envelope {
   u8 loop: 1;

@@ -341,8 +341,8 @@ static void apu_render_audio(apu_t *apu) {
     }
 
     // Mix channels together to get the final sample
-    s16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-//    s16 final_sample = apu_mix_audio(pulse1_out, 0, 0, 0, 0);
+//    s16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+    s16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, 0, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -425,7 +425,7 @@ void apu_tick(nes_t *nes) {
   else
     apu->frame_counter.step++;
 
-  printf("apu_tick took %dms\n", SDL_GetTicks() - last_ticks);
+//  printf("apu_tick took %dms\n", SDL_GetTicks() - last_ticks);
   last_ticks = SDL_GetTicks();
 }
 

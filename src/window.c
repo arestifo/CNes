@@ -36,7 +36,7 @@ void window_update(window_t *wnd, nes_t *nes) {
   // Grab rendering surface
   SDL_LockTexture(wnd->texture, NULL, (void **) &pixels, &pitch);
   u32 last_ticks = SDL_GetTicks();
-  printf("frame!\n");
+//  printf("frame!\n");
   while (!wnd->frame_ready) {
     cpu_tick(nes);
 
