@@ -160,6 +160,7 @@ typedef struct apu {
 
   bool frame_interrupt;
   u64 ticks;
+  u32 buf_scale_factor;  // Basically, how many samples are generated before being added to the queue
 
   SDL_AudioDeviceID device_id;
   SDL_AudioSpec audio_spec;

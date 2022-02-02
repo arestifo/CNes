@@ -21,8 +21,8 @@ void cpu_init(nes_t *nes) {
 
   // Load PRG ROM into CPU memory
   // TODO: Support more than mapper 0 here (bank switching)
-//  memcpy(cpu->mem + 0x8000, nes->cart->prg_rom,
-//         PRGROM_BLOCK_SZ * nes->cart->header.prgrom_n);
+  memcpy(cpu->mem + 0x8000, nes->cart->prg_rom,
+         PRGROM_BLOCK_SZ * nes->cart->header.prgrom_n);
 
   // Start program execution
   cpu->pc = cpu_read16(nes, VEC_RESET);

@@ -172,6 +172,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
     case 0x4013:
       // DMC sample length
       apu->dmc.samp_len = val;
+      break;
     case 0x4015:
       // Status register
       // TODO: DMC stuff
@@ -194,6 +195,10 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       // Frame counter
       apu->frame_counter.seq_mode = val >> 7;
       apu->frame_counter.irq_disable = val >> 6 & 1;
+
+      // Reset divider and and sequencer on every $4017 write
+      apu->frame_counter.step = 0;
+      apu->frame_counter.divider = 0;
       break;
     default:
       printf("apu_write: invalid write to $%04X\n", addr);
@@ -207,7 +212,6 @@ apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dm
   f64 square_out = pulse_table[pulse1_out + pulse2_out];
   f64 tnd_out = tnd_table[3 * triangle_out + 2 * noise_out + dmc_out];
 
-//  return (s16) ((square_out + tnd_out) * 8192);
   return (s16) ((square_out + tnd_out) * INT16_MAX);
 }
 
@@ -267,7 +271,6 @@ static inline u8 apu_get_envelope_volume(envelope_t *env) {
 static void apu_render_audio(apu_t *apu) {
   // Need a quarter frame's worth of audio
   // How many samples is in a quarter tick?
-//  const u32 SAMPLES_NEEDED = apu->audio_spec.freq / 240;
   const u32 SAMPLES_NEEDED = apu->audio_spec.freq / 60;
   // TODO: Add check to make sure ^ is a natural number
   assert(apu->audio_spec.channels == 1);
@@ -289,14 +292,9 @@ static void apu_render_audio(apu_t *apu) {
   u32 pulse1_seq_c = 0, pulse2_seq_c = 0, triangle_seq_c = 0, noise_seq_c = 0;
 
   // TODO: Adjust the audio buffer scaling factor dynamically when a buffer underrun is detected
-  // TODO: The current constant scaling factor
   u32 audio_buf_sz = SDL_GetQueuedAudioSize(apu->device_id);
-  u32 buf_scale_factor = 16;
-  if (audio_buf_sz == 0)
-    printf("apu_tick: WARNING: audio buffer underrun\n");
-
   for (int smp_n = 0;
-       smp_n < SAMPLES_NEEDED && audio_buf_sz < apu->audio_spec.freq / buf_scale_factor;
+       smp_n < SAMPLES_NEEDED && audio_buf_sz < apu->audio_spec.freq / apu->buf_scale_factor;
        smp_n++) {
     // **** Pulse 1 synth ****
     // TODO: Sweep unit
@@ -339,8 +337,9 @@ static void apu_render_audio(apu_t *apu) {
       }
 
       // Increment noise counter and shift noise shift register
-      if (!(apu->noise.shift_reg & 1))
+      if (!(apu->noise.shift_reg & 1)) {
         noise_out = apu_get_envelope_volume(&apu->noise.env);
+      }
     }
 
     // Mix channels together to get the final sample
@@ -392,7 +391,7 @@ void apu_tick(nes_t *nes) {
   apu_t *apu = nes->apu;
 
   // Clock frame counter
-  const u8 STEPS_IN_SEQ = apu->frame_counter.seq_mode ? 5 : 4;
+  const u8 STEPS_IN_SEQ = apu->frame_counter.seq_mode == 1 ? 5 : 4;
   if (STEPS_IN_SEQ == 4) {
     // *********** 4-step sequence mode ***********
     // Sequence = [0, 1, 2, 3, 0, 1, 2, 3, ...]
@@ -452,6 +451,7 @@ void apu_init(nes_t *nes, s32 sample_rate, u32 buf_len) {
 
   apu->noise.shift_reg = 1;
   apu->noise.period = NOISE_PERIOD[0];
+  apu->buf_scale_factor = 8;
 
   // Request audio spec. Init code based on
   // https://stackoverflow.com/questions/10110905/simple-sound-wave-generator-with-sdl-in-c
