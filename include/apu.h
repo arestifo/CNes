@@ -20,6 +20,16 @@ typedef struct envelope {
   u32 env_c;
 } envelope_t;
 
+typedef struct sweep_unit {
+  u8 enabled: 1;
+  u8 period: 3;
+  u8 negate: 1;
+  u8 shift: 3;
+
+  u32 sweep_c;
+  bool reload;
+} sweep_unit_t;
+
 typedef struct apu {
   // ******************** Pulse channel 1 ********************
   struct {
@@ -28,19 +38,14 @@ typedef struct apu {
     u8 lc_disable: 1;
     envelope_t env;
 
-    // Sweep unit parameters
-    u8 sweep_enabled: 1;
-    u8 sweep_period: 3;
-    u8 sweep_neg: 1;
-    u8 sweep_shift: 3;
+    // Sweep unit
+    sweep_unit_t sweep;
 
     // Length counter load value/timer high
     u8 lc_idx: 5;
 
     // Timer/frequency of output waveform
-    u16 timer: 11;
-
-    // Sweep unit
+    u16 timer;
     u8 sweep_c;
 
     // Length counter
@@ -59,16 +64,13 @@ typedef struct apu {
     envelope_t env;
 
     // Sweep unit parameters
-    u8 sweep_enabled: 1;
-    u8 sweep_period: 3;
-    u8 sweep_neg: 1;
-    u8 sweep_shift: 3;
+    sweep_unit_t sweep;
 
     // Length counter load value/timer high
     u8 lc_idx: 5;
 
     // Timer/frequency of output waveform
-    u16 timer: 11;
+    u16 timer;
 
     // Sweep unit
     u8 sweep_c;
@@ -88,7 +90,7 @@ typedef struct apu {
     // Length counter load value/timer high
     u8 lc_idx: 5;
 
-    u16 timer: 11;
+    u16 timer;
 
     // Linear/length counter
     u8 lc;
@@ -110,7 +112,7 @@ typedef struct apu {
     // Noise channel parameters
     u8 mode: 1;
     u8 r2_unused: 3;
-    u8 period: 4;
+    u16 period;
 
     // Length counter load value
     u8 lc_idx: 5;
@@ -118,6 +120,7 @@ typedef struct apu {
 
     u8 lc;
     u16 shift_reg: 15;
+    u32 seq_c;
   } noise;
 
   // ******************** DMC channel ********************

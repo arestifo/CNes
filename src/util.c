@@ -64,6 +64,13 @@ int nes_fclose(FILE *f) {
   return retval;
 }
 
+inline s32 ones_complement(s32 num) {
+  return -num - 1;
+}
+
+inline s32 twos_complement(s32 num) {
+  return -num;
+}
 
 // Gets assembler mnemonic from opcode
 char *cpu_opcode_tos(u8 opcode) {
