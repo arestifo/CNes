@@ -34,7 +34,7 @@ static void keyboard_input(nes_t *nes, SDL_Keycode sc, bool keydown) {
       break;
     default:
       printf("keyboard_input: invalid input on key%s=%d\n", keydown ? "down" : "up", sc);
-      break;
+      return;
   }
 
   // Buffer input
@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
   window_t window;
   SDL_Event event;
 
-  printf("cnes by Alex Restifo starting\n");
+  printf("cnes by Alex Restifo\n");
 
   // Init SDL
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {

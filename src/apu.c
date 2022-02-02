@@ -273,20 +273,19 @@ static void apu_render_audio(apu_t *apu) {
   // How many samples is in a quarter tick?
   const u32 SAMPLES_NEEDED = apu->audio_spec.freq / 60;
   // TODO: Add check to make sure ^ is a natural number
-  assert(apu->audio_spec.channels == 1);
   const u32 BYTES_PER_SAMPLE = apu->audio_spec.channels * sizeof(s16);
 
   // Sequence should loop once every `sample_rate / tone_hz` samples
   // TODO: implement this with lookup tables
-  const f64 PULSE1_FREQ = NTSC_CPU_SPEED / 2.0 / (apu->pulse1.timer + 1);
-  const f64 PULSE2_FREQ = NTSC_CPU_SPEED / 2.0 / (apu->pulse2.timer + 1);
-  const f64 TRIANGLE_FREQ = NTSC_CPU_SPEED * 1.0 / (apu->triangle.timer + 1);
-  const f64 NOISE_FREQ = NTSC_CPU_SPEED * 1.0 / apu->noise.period;
+  const u32 PULSE1_FREQ = NTSC_CPU_SPEED / (apu->pulse1.timer + 1) / 2;
+  const u32 PULSE2_FREQ = NTSC_CPU_SPEED / (apu->pulse2.timer + 1) / 2;
+  const u32 TRIANGLE_FREQ = NTSC_CPU_SPEED / (apu->triangle.timer + 1);
+  const u32 NOISE_FREQ = NTSC_CPU_SPEED / apu->noise.period;
 
-  const u32 PULSE1_SMP_PER_SEQ = (u32) (apu->audio_spec.freq / PULSE1_FREQ);
-  const u32 PULSE2_SMP_PER_SEQ = (u32) (apu->audio_spec.freq / PULSE2_FREQ);
-  const u32 TRIANGLE_SMP_PER_SEQ = (u32) (apu->audio_spec.freq / TRIANGLE_FREQ);
-  const u32 NOISE_SMP_PER_SEQ = (u32) (apu->audio_spec.freq / NOISE_FREQ);
+  const u32 PULSE1_SMP_PER_SEQ = apu->audio_spec.freq / PULSE1_FREQ;
+  const u32 PULSE2_SMP_PER_SEQ = apu->audio_spec.freq / PULSE2_FREQ;
+  const u32 TRIANGLE_SMP_PER_SEQ = apu->audio_spec.freq / TRIANGLE_FREQ;
+  const u32 NOISE_SMP_PER_SEQ = apu->audio_spec.freq / NOISE_FREQ;
   // **** Render num_samples worth of audio data and queue it ****
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
   u32 pulse1_seq_c = 0, pulse2_seq_c = 0, triangle_seq_c = 0, noise_seq_c = 0;

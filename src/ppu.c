@@ -8,6 +8,8 @@
 static bool write_toggle = false;
 static u16 ppu_decode_addr(ppu_t *ppu, u16 addr);
 
+const u16 PRERENDER_LINE = 261;
+
 // Reads in a .pal file as the NES system palette
 static void ppu_palette_init(nes_t *nes, char *palette_fn) {
   // Palletes are stored as 64 sets of three integers for r, g, and b intensities
@@ -29,7 +31,7 @@ static void ppu_palette_init(nes_t *nes, char *palette_fn) {
 }
 
 inline bool ppu_rendering_enabled(ppu_t *ppu) {
-  return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) &&
+  return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) ||
          GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
 }
 // Palette from http://www.firebrandx.com/nespalette.html
@@ -274,19 +276,19 @@ static u32 ppu_render_pixel(nes_t *nes) {
   return final_pixel;
 }
 
-// Does a linear search through OAM to find up to 8 sprites to render for the current scanline
-static void ppu_fill_sec_oam(ppu_t *ppu) {
+// Does a linear search through OAM to find up to 8 sprites to render for the given scanline
+static void ppu_fill_sec_oam(ppu_t *ppu, u16 scanline) {
   // Clear the list of sprites to draw (secondary OAM)
   memset(ppu->sec_oam, 0, SEC_OAM_NUM_SPR * sizeof *ppu->sec_oam);
 
   // Search through OAM to find sprites that are in range
   const u8 SPR_HEIGHT = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 16 : 8;
-  for (u8 i = 0, sec_oam_i = 0; i < 64 && sec_oam_i < 8; i++) {
+  for (u8 i = 0, sec_oam_i = 0; i < OAM_NUM_SPR && sec_oam_i < SEC_OAM_NUM_SPR; i++) {
     sprite_t cur_spr = ppu->oam[i];
 
     // Is the sprite in range, and does it already exist in the secondary OAM?
     if (cur_spr.data.tile_idx) {
-      if (ppu->scanline >= cur_spr.data.y_pos && ppu->scanline < cur_spr.data.y_pos + SPR_HEIGHT) {
+      if (scanline >= cur_spr.data.y_pos && scanline < cur_spr.data.y_pos + SPR_HEIGHT) {
         ppu->sec_oam[sec_oam_i++] = cur_spr;
       }
     }
@@ -296,11 +298,9 @@ static void ppu_fill_sec_oam(ppu_t *ppu) {
 // Renders a single pixel at the current PPU position
 // Also controls timing and issues NMIs to the CPU on VBlank
 void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
-  // TODO: Even and odd frames have slightly different behavior with idle cycles
   ppu_t *ppu = nes->ppu;
   u32 *frame_buf = (u32 *) pixels;
 
-  const u16 PRERENDER_LINE = 261;
   const u16 SCANLINE = ppu->scanline;
   const u16 DOT = ppu->dot;
 
@@ -309,7 +309,9 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     // Cycle 0 on all visible scanlines is an idle cycle, but we will use it to get the
     // sprites that should be rendered on this scanline
     if (DOT == 0) {
-      ppu_fill_sec_oam(ppu);
+      ppu_fill_sec_oam(ppu, ppu->scanline);
+
+      // TODO: Even and odd frames have slightly different behavior with idle cycles
     } else if (DOT >= 1 && DOT <= 256) {
       // We're in the visible section of rendering, so render a pixel
       u32 pixel = ppu_render_pixel(nes);
@@ -493,9 +495,34 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       ppu->vram_addr += vram_inc;
       break;
     case OAMADDR:
-      // TODO: Implement PPU OAMADDR and OAMDATA registers. Most games don't use them,
-      // TODO: so I'm not gonna bother right now
       ppu->regs[OAMADDR] = val;
+      break;
+    case OAMDATA:
+      if (ppu_rendering_enabled(ppu)) {
+        if (ppu->scanline == PRERENDER_LINE || (ppu->scanline >= 0 && ppu->scanline <= 239)) {
+          // TODO: Implement the glitchy OAMADDR increment here
+          printf(
+              "ppu_reg_write: WARNING: OAMDATA write emulation during rendering is not implemented, continuing without glitchy increment");
+        }
+      }
+
+      // Get index into our OAM abstraction from OAMADDR
+      // Basically, turn OAMADDR (0x00-0xFF) into a 0-63 index into our sprite_t[64] OAM
+      // We do this by masking out the lower two bits (these two bits select the sprite attribute
+      // we will change)
+      u8 oam_idx = (ppu->regs[OAMADDR] & 0xFC) >> 2;
+      u8 attr_idx = ppu->regs[OAMADDR] & 3;  // Extract lower two bits
+
+      // Write the value to OAM
+      if (attr_idx == 0)
+        ppu->oam[oam_idx].data.y_pos = val;
+      else if (attr_idx == 1)
+        ppu->oam[oam_idx].data.tile_idx = val;
+      else if (attr_idx == 2)
+        ppu->oam[oam_idx].data.attr = val;
+      else if (attr_idx == 3)
+        ppu->oam[oam_idx].data.x_pos = val;
+
       break;
     default:
       printf("ppu_reg_write: cannot write to ppu reg $%02d\n", reg);
