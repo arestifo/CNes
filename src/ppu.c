@@ -212,6 +212,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
         if (cur_spr.data.tile_idx) {
           if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8) {
             active_spr_i = i;
+            break;
           }
         }
       }
@@ -260,8 +261,10 @@ static u32 ppu_render_pixel(nes_t *nes) {
     // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
     // detection. Check that here
     // TODO: Don't trigger sprite zero hit when the left-side clipping window is sweep_enabled
-    if (active_spr.sprite0 && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT))
+    if (active_spr.sprite0 && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT)) {
+//      printf("ppu_tick(): S0 hit! frameno=%llu x=%d y=%d\n", ppu->frameno, cur_x, cur_y);
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
+    }
     final_pixel = spr_has_priority ? ppu_get_palette_color(ppu, spr_color_idx)
                                    : ppu_get_palette_color(ppu, bgr_color_idx);
   }

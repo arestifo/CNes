@@ -29,10 +29,11 @@ void window_init(window_t *wnd) {
 }
 
 void window_update(window_t *wnd, nes_t *nes) {
-  // One row in the framebuffer is 4 * WINDOW_W bytes long
+  // One row in the framebuffer is 4 * WINDOW_W bytes long (Framebuffer pixels are RGBA)
   int pitch = 4 * WINDOW_W;
   u32 *pixels = NULL;
 
+  // Grab rendering surface
   SDL_LockTexture(wnd->texture, NULL, (void **) &pixels, &pitch);
   while (!wnd->frame_ready) {
     cpu_tick(nes);
@@ -42,7 +43,6 @@ void window_update(window_t *wnd, nes_t *nes) {
       ppu_tick(nes, wnd, pixels);
     }
 
-    // APU ticks
     if (nes->apu->frame_counter.divider == NTSC_TICKS_PER_SEQ) {
       nes->apu->frame_counter.divider = 0;
       apu_tick(nes);

@@ -231,6 +231,11 @@ static inline u8 apu_get_env_volume(envelope_t *env) {
 
 static void apu_render_audio(apu_t *apu) {
   // Need a quarter frame's worth of audio
+  // How many samples is in a quarter tick?
+//  const u32 SAMPLES_NEEDED = apu->audio_spec.freq / 240;
+  const u32 SAMPLES_NEEDED = apu->audio_spec.freq / 60;
+  // TODO: Add check to make sure ^ is a natural number
+  assert(apu->audio_spec.channels == 1);
   const u32 BYTES_PER_SAMPLE = apu->audio_spec.channels * sizeof(s16);
 
   // Sequence should loop once every `sample_rate / tone_hz` samples
@@ -245,7 +250,17 @@ static void apu_render_audio(apu_t *apu) {
   // **** Render num_samples worth of audio data and queue it ****
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
   u32 pulse1_seq_c = 0, pulse2_seq_c = 0, triangle_seq_c = 0;
-  for (int smp_n = 0; smp_n < apu->audio_spec.samples; smp_n++) {
+
+  // TODO: Adjust the audio buffer scaling factor dynamically when a buffer underrun is detected
+  // TODO: The current constant scaling factor
+  u32 audio_buf_sz = SDL_GetQueuedAudioSize(apu->device_id);
+  u32 buf_scale_factor = 16;
+  if (audio_buf_sz == 0)
+    printf("apu_tick: WARNING: audio buffer underrun\n");
+
+  for (int smp_n = 0;
+       smp_n < SAMPLES_NEEDED && audio_buf_sz < apu->audio_spec.freq / buf_scale_factor;
+       smp_n++) {
     // **** Pulse 1 synth ****
     // TODO: Sweep unit
     if (apu->pulse1.lc > 0 && apu->pulse1.timer > 7 && apu->status.pulse1_enable) {
@@ -279,8 +294,7 @@ static void apu_render_audio(apu_t *apu) {
 
     // Mix channels together to get the final sample
     s16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-    if (SDL_GetQueuedAudioSize(apu->device_id) < apu->audio_spec.samples * 4)
-      SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
+    SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
 
