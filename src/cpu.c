@@ -29,56 +29,8 @@ void cpu_init(nes_t *nes) {
 }
 
 void cpu_destroy(nes_t *nes) {
-  // TODO
-}
-
-u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
-  u8 low, high;
-
-  cpu_t *cpu = nes->cpu;
-  switch (mode) {
-    case ABS_IDX_X:
-      return addr + cpu->x;
-    case ABS_IDX_Y:
-      return addr + cpu->y;
-    case ABS:
-    case ZP:
-      return addr;
-    case ZP_IDX_X:
-      return (addr + cpu->x) & 0xFF;
-    case ZP_IDX_Y:
-      return (addr + cpu->y) & 0xFF;
-    case REL:
-      // Fortunately, the 6502 uses two's complement for signed numbers, so casting to s8 works perfectly
-      return cpu->pc + (s8) addr;
-    case ABS_IND:
-      // The only instruction to use this addrmode_t is JMP, which has a bug
-      // where the LSB is read correctly but the MSB is not read from across
-      // the page boundary, but rather wrapped around the page
-      // For example, JMP ($02FF) *should* read the destination LSB from $02FF
-      // and from $0300, but incorrectly reads $02FF and $0200 instead
-      if (PAGE_CROSSED(addr, addr + 1)) {
-        low = cpu_read8(nes, addr);
-        high = cpu_read8(nes, addr & 0xFF00);
-        return low | (high << 8);
-      }
-      return cpu_read16(nes, addr);
-    case ZP_IDX_IND:
-      low = cpu_read8(nes, (addr + cpu->x) & 0xFF);
-      high = cpu_read8(nes, (addr + cpu->x + 1) & 0xFF);
-
-      return low | (high << 8);
-    case ZP_IND_IDX_Y:
-      low = cpu_read8(nes, addr);
-      high = cpu_read8(nes, (addr + 1) & 0xFF);
-
-      return (low | (high << 8)) + cpu->y;
-    case IMPL_ACCUM:
-    case IMM:
-    default:
-      printf("resolve_addr: requested vram_addr for invalid vram_addr mode %d\n", mode);
-      return 0;
-  }
+  // This might not be necessary
+  bzero(nes->cpu, sizeof *nes->cpu);
 }
 
 // Having two functions to resolve addresses is sub-optimal and a byproduct of some poor choices I
@@ -95,26 +47,42 @@ cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
   switch (mode) {
     case ABS:
     case ZP:
+      return addr;
     case REL:
-      break;
+      return cpu->pc + (i8) addr;
     case ABS_IND:
       cpu->ticks += 2;
-      break;
+      // The only instruction to use this addrmode_t is JMP, which has a bug
+      // where the LSB is read correctly but the MSB is not read from across
+      // the page boundary, but rather wrapped around the page
+      // For example, JMP ($02FF) *should* read the destination LSB from $02FF
+      // and from $0300, but incorrectly reads $02FF and $0200 instead
+      if (PAGE_CROSSED(addr, addr + 1)) {
+        low = cpu_read8(nes, addr);
+        high = cpu_read8(nes, addr & 0xFF00);
+        return low | (high << 8);
+      }
+      return cpu_read16(nes, addr);
     case ABS_IDX_X:
       if (PAGE_CROSSED(addr, addr + cpu->x) || is_write)
         cpu->ticks++;
-      break;
+      return addr + cpu->x;
     case ABS_IDX_Y:
       if (PAGE_CROSSED(addr, addr + cpu->y) || is_write)
         cpu->ticks++;
-      break;
+      return addr + cpu->y;
     case ZP_IDX_X:
+      cpu->ticks++;
+      return (addr + cpu->x) & 0xFF;
     case ZP_IDX_Y:
       cpu->ticks++;
-      break;
+      return (addr + cpu->y) & 0xFF;
     case ZP_IDX_IND:
       cpu->ticks += 3;
-      break;
+      low = cpu_read8(nes, (addr + cpu->x) & 0xFF);
+      high = cpu_read8(nes, (addr + cpu->x + 1) & 0xFF);
+
+      return low | (high << 8);
     case ZP_IND_IDX_Y:
       low = cpu_read8(nes, addr);
       high = cpu_read8(nes, (addr + 1) & 0xFF);
@@ -129,7 +97,6 @@ cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
       printf("resolve_addr: requested vram_addr for invalid vram_addr mode\n");
       return 0;
   }
-  return resolve_addr(nes, addr, mode);
 }
 
 // Gets the addressing mode from an opcode. Based on the chart from:
@@ -169,18 +136,23 @@ static void cpu_handle_irq(nes_t *nes, interrupt_t type) {
   cpu_push16(nes, cpu->pc);
 
   u16 vec;
+  // Three types of interrupt:
+  // 1) BRK instruction. This is a software generated interrupt
+  // 2) IRQ line. This is triggered in hardware by holding the CPU's IRQ line high
+  // 3) NMI. Non-maskable interrupts are also triggered via a specific line, but they are non-maskable and therefore
+  //    we must respond to them.
   if (type == INTR_BRK) {
+    // BRK instruction
     SET_BIT(cpu->p, B_BIT, 1);
     vec = VEC_IRQ;
   } else if (type == INTR_IRQ) {
+    // IRQ
     SET_BIT(cpu->p, B_BIT, 0);
     vec = VEC_IRQ;
-  } else if (type == INTR_NMI) {
+  } else {
+    // NMI
     SET_BIT(cpu->p, B_BIT, 0);
     vec = VEC_NMI;
-  } else {
-    printf("cpu_handle_irq: invalid interrupt type %d\n", type);
-    exit(EXIT_FAILURE);
   }
 
   // Push processor status and disable interrupts
@@ -217,35 +189,7 @@ void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
 
 void cpu_tick(nes_t *nes) {
   // Get opcode at current PC
-  u8 opcode, old_carry;
-  u16 operand, addr, result;
-  addrmode_t mode;
-  bool v_cond;
-  cpu_t *cpu;
-
-  // Output current CPU state for debugging
-  // We have to re-do all instruction fetching here because we don't want to
-  // increment cycles
-  cpu = nes->cpu;
-
-  // For now, CPU debugging breaks things TODO: Fix this
-  assert(!nes->args->cpu_log_output);
-
-  if (nes->args->cpu_log_output) {
-    u8 debug_opcode;
-    u16 debug_operand;
-    addrmode_t debug_mode;
-
-    debug_opcode = cpu_read8(nes, cpu->pc);
-    debug_mode = get_addrmode(debug_opcode);
-    if (OPERAND_SIZES[debug_mode] == 1)
-      debug_operand = cpu_read8(nes, cpu->pc + 1);
-    else if (OPERAND_SIZES[debug_mode] == 2)
-      debug_operand = cpu_read16(nes, cpu->pc + 1);
-    else  // Just to quiet the compiler
-      debug_operand = 0;
-    dump_cpu(nes, debug_opcode, debug_operand, debug_mode);
-  }
+  cpu_t *cpu = nes->cpu;
 
   // Check for interrupts
   if (cpu->irq_pending) {
@@ -258,16 +202,25 @@ void cpu_tick(nes_t *nes) {
     cpu->nmi_pending = false;
   }
 
-  opcode = cpu_read8(nes, cpu->pc);
-  mode = get_addrmode(opcode);
+  u8 opcode = cpu_read8(nes, cpu->pc);
+  addrmode_t mode = get_addrmode(opcode);
 
+  u16 operand;
   if (OPERAND_SIZES[mode] == 1)
     operand = cpu_read8(nes, cpu->pc + 1);
   else if (OPERAND_SIZES[mode] == 2)
     operand = cpu_read16(nes, cpu->pc + 1);
 
+  // Set PC to addr of next instruction
   cpu->pc += OPERAND_SIZES[mode] + 1;  // +1 for the opcode itself
   cpu->ticks += OPERAND_SIZES[mode] + 1;
+
+  u8 old_carry;
+  u16 addr, result;
+  bool v_cond;
+
+  // TODO: Split these cases into functions and implement with a lookup table of function pointers
+  // Something like void (*ops)(nes_t * nes, u16 operand, addrmode_t mode, bool is_write)[256]
   switch (opcode) {
     case 0x4C:  // JMP
     case 0x6C:
@@ -830,116 +783,4 @@ void cpu_tick(nes_t *nes) {
 inline void cpu_set_nz(nes_t *nes, u8 result) {
   SET_BIT(nes->cpu->p, N_BIT, (result & 0x80) >> 7);
   SET_BIT(nes->cpu->p, Z_BIT, !result);
-}
-
-// TODO: This function mysteriously breaks things, I think it has something to do with the
-// TODO: cpu_read8 calls that have side effects when used on PPU regs, OAM DMA, controller regs etc
-void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
-  u8 num_operands, low, high;
-  u16 addr;
-  cpu_t *cpu;
-
-  cpu = nes->cpu;
-  FILE *log_f = nes->args->cpu_logf;
-
-  fprintf(log_f, "%04X  ", cpu->pc);
-  num_operands = OPERAND_SIZES[mode];
-  low = operand & 0x00FF;
-  high = (operand & 0xFF00) >> 8;
-  switch (num_operands) {
-    case 0:
-      fprintf(log_f, "%02X       ", opcode);
-      break;
-    case 1:
-      fprintf(log_f, "%02X %02X    ", opcode, low);
-      break;
-    case 2:
-      fprintf(log_f, "%02X %02X %02X ", opcode, low, high);
-      break;
-    default:
-      printf("dump_cpu: invalid operand count, wtf?\n");
-      exit(EXIT_FAILURE);
-  }
-  fprintf(log_f, " %s", cpu_opcode_tos(opcode));
-  switch (mode) {
-    case ABS:
-      // JSR and JMP absolute shouldn't display val @ address
-      if (opcode == 0x20 || opcode == 0x4C)
-        fprintf(log_f, " $%04X                       ", operand);
-      else {
-        // We don't want to access regs that have side effects, like PPU regs, OAM DMA,
-        if (!(operand >= 0x2000 && operand <= 0x3FFF) && !(operand >= 0x4000 && operand <= 0x4020))
-          fprintf(log_f, " $%04X = %02X                  ", operand, cpu_read8(nes, operand));
-        else
-          fprintf(log_f, " $%04X                       ", operand);
-      }
-      break;
-    case ABS_IND:
-      addr = resolve_addr(nes, operand, mode);
-      fprintf(log_f, " ($%04X) = %04X              ", operand, addr);
-      break;
-    case ABS_IDX_X:
-    case ABS_IDX_Y:
-      addr = resolve_addr(nes, operand, mode);
-      fprintf(log_f, " $%04X,%s @ %04X = %02X         ", operand,
-              mode == ABS_IDX_X ? "X" : "Y", addr, cpu_read8(nes, addr));
-      break;
-    case REL:
-      // Add two because we haven't advanced the PC when this function is called
-      addr = resolve_addr(nes, operand, mode) + 2;
-      fprintf(log_f, " $%04X                       ", addr);
-      break;
-    case IMM:
-      fprintf(log_f, " #$%02X                        ", operand);
-      break;
-    case ZP:
-      fprintf(log_f, " $%02X = %02X                    ", operand,
-              cpu_read8(nes, operand));
-      break;
-    case ZP_IDX_X:
-    case ZP_IDX_Y:
-      addr = resolve_addr(nes, operand, mode);
-      fprintf(log_f, " $%02X,%s @ %02X = %02X             ", operand,
-              mode == ZP_IDX_X ? "X" : "Y", addr, cpu_read8(nes, addr));
-      break;
-    case ZP_IDX_IND:
-      addr = resolve_addr(nes, operand, mode);
-      fprintf(log_f, " ($%02X,X) @ %02X = %04X = %02X    ", operand,
-              (operand + cpu->x) & 0xFF, addr, cpu_read8(nes, addr));
-      break;
-    case ZP_IND_IDX_Y:
-      addr = resolve_addr(nes, operand, mode);
-      low = cpu_read8(nes, operand);
-      high = cpu_read8(nes, (operand + 1) & 0xFF);
-      fprintf(log_f, " ($%02X),Y = %04X @ %04X = %02X  ", operand,
-              low | (high << 8), addr, cpu_read8(nes, addr));
-      break;
-    case IMPL_ACCUM:
-      // For some dumb reason, accumulator arithmetic instructions have "A" as
-      // the operand...
-      // LSR ASL ROL ROR
-      if (opcode == 0x4A || opcode == 0x0A || opcode == 0x2A || opcode == 0x6A)
-        fprintf(log_f, " A                           ");
-      else
-        fprintf(log_f, "                             ");
-      break;
-    default:
-      printf("dump_cpu: invalid addressing mode, wtf?\n");
-      exit(EXIT_FAILURE);
-  }
-
-  // Print registers
-  fprintf(log_f,
-          "A:%02X X:%02X Y:%02X P:%02X SP:%02X PPU:%3u,%3u CYC:%llu",
-          cpu->a, cpu->x, cpu->y, cpu->p, cpu->sp, nes->ppu->scanline,
-          nes->ppu->dot, cpu->ticks);
-
-  // Mark where interrupts occur
-  if (cpu->nmi_pending) {
-    fprintf(log_f, " **** NMI occurred ****");
-  } else if (cpu->irq_pending) {
-    fprintf(log_f, " **** IRQ occurred ****");
-  }
-
-  fprintf(log_f, "\n");
 }

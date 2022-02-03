@@ -45,10 +45,6 @@ static void keyboard_input(nes_t *nes, SDL_Keycode sc, bool keydown) {
 }
 
 int main(int argc, char **argv) {
-  nes_t nes;
-  window_t window;
-  SDL_Event event;
-
   printf("cnes by Alex Restifo\n");
 
   // Init SDL
@@ -64,26 +60,18 @@ int main(int argc, char **argv) {
   }
 
   // Initialize the NES and display window
+  nes_t nes;
+  window_t window;
+
   nes_init(&nes, argv[1]);
   window_init(&window);
-
-  // Logging
-  // TODO: Make this more robust
-//  char *cpu_log_fn = "../logs/cpu.log";
-//  char *ppu_log_fn = "../logs/ppu.log";
-//  remove(cpu_log_fn);
-//  remove(ppu_log_fn);
-//  nes.args->cpu_logf = nes_fopen(cpu_log_fn, "w");
-//  nes.args->ppu_logf = nes_fopen(ppu_log_fn, "w");
-
-  nes.args->cpu_log_output = false;
-  nes.args->ppu_log_output = false;
 
   // TODO: Make this configurable
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);
 
   bool is_running = true;
   u32 last_ticks = SDL_GetTicks();
+  SDL_Event event;
   while (is_running) {
     // Main event polling loop
     // Also update the keyboard array so we can get input
@@ -111,8 +99,6 @@ int main(int argc, char **argv) {
 
   // Clean up
   window_destroy(&window);
-//  nes_fclose(nes.args->cpu_logf);
-//  nes_fclose(nes.args->ppu_logf);
   nes_destroy(&nes);
   SDL_Quit();
 

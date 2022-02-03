@@ -3,7 +3,7 @@ project(CNES C)
 
 set(CMAKE_C_STANDARD 11)
 #set(CMAKE_C_FLAGS "-Ofast -Wall")
-set(CMAKE_C_FLAGS "-Og -Wall")
+set(CMAKE_C_FLAGS "-O0 -Wall")
 find_package(SDL2 REQUIRED)
 
 add_executable(CNES src/main.c include/types.h src/cart.c src/cpu.c include/cpu.h

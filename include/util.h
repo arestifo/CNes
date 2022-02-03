@@ -9,8 +9,8 @@
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
 // Math helper functions
-s32 ones_complement(s32 num);
-s32 twos_complement(s32 num);
+i32 ones_complement(i32 num);
+i32 twos_complement(i32 num);
 
 // Memory helper functions
 void *nes_malloc(size_t sz);

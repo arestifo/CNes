@@ -65,11 +65,11 @@ int nes_fclose(FILE *f) {
   return retval;
 }
 
-inline s32 ones_complement(s32 num) {
+inline i32 ones_complement(i32 num) {
   return -num - 1;
 }
 
-inline s32 twos_complement(s32 num) {
+inline i32 twos_complement(i32 num) {
   return -num;
 }
 

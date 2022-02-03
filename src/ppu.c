@@ -6,6 +6,7 @@
 #include "../include/args.h"
 
 static bool write_toggle = false;
+
 static u16 ppu_decode_addr(ppu_t *ppu, u16 addr);
 
 const u16 PRERENDER_LINE = 261;
@@ -13,17 +14,16 @@ const u16 PRERENDER_LINE = 261;
 // Reads in a .pal file as the NES system palette
 static void ppu_palette_init(nes_t *nes, char *palette_fn) {
   // Palletes are stored as 64 sets of three integers for r, g, and b intensities
-  FILE *palette_f;
-  SDL_PixelFormat *pixel_fmt;
   color_t pal[PALETTE_SZ];
 
   // Read in the palette
-  palette_f = nes_fopen(palette_fn, "rb");
+  assert(sizeof *pal == 3);
+  FILE *palette_f = nes_fopen(palette_fn, "rb");
   nes_fread(pal, sizeof *pal, PALETTE_SZ, palette_f);
   nes_fclose(palette_f);
 
   // Initialize internal palette from read palette data
-  pixel_fmt = SDL_AllocFormat(SDL_PIXELFORMAT_ARGB32);
+  SDL_PixelFormat *pixel_fmt = SDL_AllocFormat(SDL_PIXELFORMAT_ARGB32);
   for (int i = 0; i < PALETTE_SZ; i++)
     nes->ppu->palette[i] = SDL_MapRGBA(pixel_fmt, pal[i].r, pal[i].g, pal[i].b, 0xFF);
 
@@ -34,6 +34,7 @@ inline bool ppu_rendering_enabled(ppu_t *ppu) {
   return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) ||
          GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
 }
+
 // Palette from http://www.firebrandx.com/nespalette.html
 void ppu_init(nes_t *nes) {
   ppu_t *ppu = nes->ppu;
@@ -132,7 +133,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
   u8 cur_nt = (ppu->vram_addr >> 10) & 0x3;
 
   u8 cur_x = ppu->dot - 1;
-  u8 cur_y = ppu->scanline;
+  u8 cur_y = ppu->scanline - 1;
 
   // **************** Background rendering ****************
   bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
@@ -185,12 +186,6 @@ static u32 ppu_render_pixel(nes_t *nes) {
       // Calculate an index into the background palette from the palette and attribute color bits
       u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2));
 
-      if (nes->args->ppu_log_output) {
-        fprintf(nes->args->ppu_logf,
-                "(%d, %d) = coarse_x=%d coarse_y=%d fine_x=%d fine_y=%d vram=$%04X\n", cur_y, cur_x,
-                coarse_x, coarse_y, ppu->fine_x, fine_y, ppu->vram_addr);
-      }
-
       // Get an index into the system palette from the background palette index
       bgr_color_idx = palette_idx & 3 ? ppu_read(ppu, palette_idx) : 0;
     }
@@ -207,11 +202,12 @@ static u32 ppu_render_pixel(nes_t *nes) {
       // Detect sprite zero hit
       // sprite zero hit doesn't happen if background rendering is disabled
       if (show_bgr) {
-        for (u8 i = 0; i < SEC_OAM_NUM_SPR; i++) {
+        for (i8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
           sprite_t maybe_spr0 = ppu->sec_oam[i];
-          if (maybe_spr0.sprite0) {
+          if (maybe_spr0.sprite0 &&
+              cur_x >= maybe_spr0.data.x_pos && cur_x < maybe_spr0.data.x_pos + 8 &&
+              maybe_spr0.data.tile_idx) {
             sprite_zerohit = true;
-            break;
           }
         }
       }
@@ -219,7 +215,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
       // Get the sprite to be shown from the secondary OAM.
       // Secondary OAM is initialized at the beginning of every scanline and contains the sprites to
       // be shown on that scanline.
-      for (s8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
+      for (i8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
         sprite_t cur_spr = ppu->sec_oam[i];
         if (cur_spr.data.tile_idx) {
           if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8) {
@@ -268,10 +264,10 @@ static u32 ppu_render_pixel(nes_t *nes) {
     final_pixel = ppu_get_palette_color(ppu, bgr_color_idx);
   else {
     // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
-    // detection. Check that here
-    // TODO: Don't trigger sprite zero hit when the left-side clipping window is sweep_enabled
+    // detection.
     if (sprite_zerohit && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT)) {
-      printf("frame %llu: s0 hit at [%d, %d], bgr_idx=%d spr_idx=%d\n", ppu->frameno, cur_x, cur_y, bgr_color_idx, spr_color_idx);
+      printf("frame %lu: s0 hit at [%d, %d], bgr_idx=%d spr_idx=%d\n", ppu->frameno, cur_x, cur_y, bgr_color_idx,
+             spr_color_idx);
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
     }
     final_pixel = spr_has_priority ? ppu_get_palette_color(ppu, spr_color_idx)
@@ -314,7 +310,9 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     // Cycle 0 on all visible scanlines is an idle cycle, but we will use it to get the
     // sprites that should be rendered on this scanline
     if (DOT == 0) {
-      ppu_fill_sec_oam(ppu, ppu->scanline);
+      // Not entirely sure why this works when scanline=0, but I guess it's not really a problem
+      // (scanline would be UINT16_MAX after subtracting 1 from 0)
+      ppu_fill_sec_oam(ppu, ppu->scanline - 1);
 
       // TODO: Even and odd frames have slightly different behavior with idle cycles
     } else if (DOT >= 1 && DOT <= 256) {
@@ -444,13 +442,6 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
         ppu->temp_addr |= (val & 7) << 12;
       }
       write_toggle ^= true;
-
-      static int i = 0;
-      if (nes->args->ppu_log_output) {
-        fprintf(nes->args->ppu_logf, "ppu_write: i=%d w=%d PPUSCROLL write $%02X\n", i++,
-                write_toggle, val);
-      }
-
       break;
     case PPUADDR:  // $2006
       // The first PPUADDR write is the high byte of VRAM to be accessed, and the second byte
@@ -467,19 +458,10 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
         ppu->vram_addr = ppu->temp_addr;
       }
 
-      if (nes->args->ppu_log_output) {
-        fprintf(nes->args->ppu_logf, "ppu_write: i=%d w=%d PPUADDR write $%02X\n", i++,
-                write_toggle, val);
-      }
-
       write_toggle ^= true;  // Toggle ppuaddr_written
       break;
     case PPUCTRL:  // $2000
       ppu->regs[PPUCTRL] = val;
-
-      if (nes->args->ppu_log_output) {
-        fprintf(nes->args->ppu_logf, "ppu_write: i=%d PPUCTRL write $%02X\n", i++, val);
-      }
 
       // Copy nametable bits to temp addr
       ppu->temp_addr &= ~(3 << 10);

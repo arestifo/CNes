@@ -216,12 +216,12 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
 }
 
 // Mixes raw channel output into a signed 16-bit sample
-static inline s16
+static inline i16
 apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dmc_out) {
   f32 square_out = pulse_volume_table[pulse1_out + pulse2_out];
   f32 tnd_out = tnd_volume_table[3 * triangle_out + 2 * noise_out + dmc_out];
 
-  return (s16) ((square_out + tnd_out) * INT16_MAX);
+  return (i16) ((square_out + tnd_out) * INT16_MAX);
 }
 
 // Increment APU waveform period counter with proper wrap around
@@ -245,7 +245,7 @@ static inline void apu_clock_envelope(envelope_t *env) {
 
 // Clock an APU su unit, updating a period `target_pd` with its output
 static inline void
-apu_clock_sweep_unit(sweep_unit_t *su, u16 *target_pd, s32 (*negate_func)(s32)) {
+apu_clock_sweep_unit(sweep_unit_t *su, u16 *target_pd, i32 (*negate_func)(i32)) {
   // Calculate the new period after shifting
   u16 new_pd = *target_pd >> su->shift;
 
@@ -278,7 +278,7 @@ static inline u8 apu_get_envelope_volume(envelope_t *env) {
 }
 
 static void apu_render_audio(apu_t *apu) {
-  const u32 BYTES_PER_SAMPLE = apu->audio_spec.channels * sizeof(s16);
+  const u32 BYTES_PER_SAMPLE = apu->audio_spec.channels * sizeof(i16);
 
   // Sequence should loop once every `sample_rate / tone_hz` samples
   // TODO: implement this with lookup tables
@@ -341,8 +341,8 @@ static void apu_render_audio(apu_t *apu) {
     }
 
     // Mix channels together to get the final sample
-//    s16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-    s16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, 0, dmc_out);
+//    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, 0, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -457,7 +457,7 @@ static void apu_init_lookup_tables(apu_t *apu) {
   }
 }
 
-void apu_init(nes_t *nes, s32 sample_rate, u32 buf_len) {
+void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
   apu_t *apu = nes->apu;
 
   // Initialize all APU state to zero
