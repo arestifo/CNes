@@ -1,7 +1,7 @@
-#include "../include/window.h"
-#include "../include/ppu.h"
-#include "../include/cpu.h"
-#include "../include/apu.h"
+#include "include/window.h"
+#include "include/ppu.h"
+#include "include/cpu.h"
+#include "include/apu.h"
 
 void window_init(window_t *wnd) {
   // Create the main display window

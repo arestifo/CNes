@@ -1,6 +1,6 @@
-#include "../include/apu.h"
-#include "../include/cpu.h"
-#include "../include/util.h"
+#include "include/apu.h"
+#include "include/cpu.h"
+#include "include/util.h"
 
 const u8 LC_LENGTHS[32] = {0x0A, 0xFE, 0x14, 0x02, 0x28, 0x04, 0x50, 0x06, 0xA0, 0x08, 0x3C, 0x0A,
                            0x0E, 0x0C, 0x1A, 0x0E, 0x0C, 0x10, 0x18, 0x12, 0x30, 0x14, 0x60, 0x16,
@@ -62,7 +62,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
     case 0x4001:
       // Pulse 1 sweep unit: EPPP NSSS
       apu->pulse1.sweep.enabled = val >> 7;
-      apu->pulse1.sweep.period = (val >> 4 & 7) + 1;
+      apu->pulse1.sweep.period = (val >> 4 & 7);
       apu->pulse1.sweep.negate = val >> 3 & 1;
       apu->pulse1.sweep.shift = val & 7;
       apu->pulse1.sweep.reload = true;
@@ -82,7 +82,8 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
         apu->pulse1.lc = LC_LENGTHS[apu->pulse1.lc_idx];
 
       // Restart sequence but not divider (seq_c)
-      apu->pulse1.seq_idx = 0;
+//      apu->pulse1.seq_idx = 0;
+//      apu->pulse1.seq_c = 0;
       apu->pulse1.env.env_seq_i = 0;
       apu->pulse1.env.env_c = 0;
       break;
@@ -98,7 +99,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
     case 0x4005:
       // Pulse 2 sweep unit: EPPP NSSS
       apu->pulse2.sweep.enabled = val >> 7;
-      apu->pulse2.sweep.period = (val >> 4 & 7) + 1;
+      apu->pulse2.sweep.period = (val >> 4 & 7);
       apu->pulse2.sweep.negate = val >> 3 & 1;
       apu->pulse2.sweep.shift = val & 7;
       apu->pulse2.sweep.reload = true;
@@ -118,9 +119,10 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
         apu->pulse2.lc = LC_LENGTHS[apu->pulse2.lc_idx];
 
       // Restart sequence but not divider (seq_c)
-      apu->pulse2.seq_idx = 0;
+//      apu->pulse2.seq_idx = 0;
+//      apu->pulse2.seq_c = 0;
       apu->pulse2.env.env_seq_i = 0;
-//      apu->pulse2.env.env_c = 0;
+      apu->pulse2.env.env_c = 0;
       break;
     case 0x4008:
       // Triangle linear counter control/lc halt and linear counter reload value
@@ -280,69 +282,57 @@ static inline u8 apu_get_envelope_volume(envelope_t *env) {
 static void apu_render_audio(apu_t *apu) {
   const u32 BYTES_PER_SAMPLE = apu->audio_spec.channels * sizeof(i16);
 
-  // Sequence should loop once every `sample_rate / tone_hz` samples
-  // TODO: implement this with lookup tables
-  const u32 PULSE1_FREQ = NTSC_CPU_SPEED / (apu->pulse1.timer + 1) / 2;
-  const u32 PULSE2_FREQ = NTSC_CPU_SPEED / (apu->pulse2.timer + 1) / 2;
-  const u32 TRIANGLE_FREQ = NTSC_CPU_SPEED / (apu->triangle.timer + 1);
-  const u32 NOISE_FREQ = NTSC_CPU_SPEED / apu->noise.period;
-//  printf("pulse1 freq is %d Hz smprate is %d Hz\n", PULSE1_FREQ, apu->audio_spec.freq);
+  const u32 PULSE1_SMP_PER_SEQ = pulse_smp_table[apu->pulse1.timer];
+  const u32 PULSE2_SMP_PER_SEQ = pulse_smp_table[apu->pulse2.timer];
+  const u32 TRIANGLE_SMP_PER_SEQ = triangle_smp_table[apu->triangle.timer];
+  const u32 NOISE_SMP_PER_SEQ = noise_smp_table[apu->noise.period];
 
-  const u32 PULSE1_SMP_PER_SEQ = apu->audio_spec.freq / PULSE1_FREQ;
-  const u32 PULSE2_SMP_PER_SEQ = apu->audio_spec.freq / PULSE2_FREQ;
-  const u32 TRIANGLE_SMP_PER_SEQ = apu->audio_spec.freq / TRIANGLE_FREQ;
-  const u32 NOISE_SMP_PER_SEQ = apu->audio_spec.freq / NOISE_FREQ;
-  // **** Render num_samples worth of audio data and queue it ****
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
-//  printf("p1 seq_c=%d, p2 seq_c=%d, t seq_c=%d, n seq_c=%d\n", apu->pulse1.seq_c, apu->pulse2.seq_c, apu->triangle.seq_c, apu->noise.seq_c);
+//  printf("apu_render_audio: bufsz=%d p1 seq_c=%d, p2 seq_c=%d, t seq_c=%d, n seq_c=%d\n",
+//         SDL_GetQueuedAudioSize(apu->device_id), apu->pulse1.seq_c, apu->pulse2.seq_c, apu->triangle.seq_c, apu->noise.seq_c);
   // TODO: Adjust the audio buffer scaling factor dynamically when a buffer underrun is detected
   while (SDL_GetQueuedAudioSize(apu->device_id) < apu->audio_spec.freq / apu->buf_scale_factor) {
     // **** Pulse 1 synth ****
     if (apu->pulse1.lc > 0 && apu->pulse1.timer > 7 && apu->status.pulse1_enable) {
-      const u8 PULSE1_VOLUME = apu_get_envelope_volume(&apu->pulse1.env);
-      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * PULSE1_VOLUME;
-
-      apu_clock_sequence_counter(&apu->pulse1.seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
+      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * apu_get_envelope_volume(&apu->pulse1.env);
     }
 
     // **** Pulse 2 synth ****
     if (apu->pulse2.lc > 0 && apu->pulse2.timer > 7 && apu->status.pulse2_enable) {
-      const u8 PULSE2_VOLUME = apu_get_envelope_volume(&apu->pulse2.env);
-      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * PULSE2_VOLUME;
-
-      apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
+      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * apu_get_envelope_volume(&apu->pulse2.env);
     }
 
     // **** Triangle synth ****
     if (apu->triangle.lc > 0 && apu->triangle.linc > 0 && apu->status.triangle_enable) {
       triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
-
-      apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
     }
 
     // **** Noise synth ****
     if (apu->noise.lc > 0 && apu->status.noise_enable) {
-      if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
-        apu->noise.seq_c = 0;
-
-        // Shift noise shift register
-        const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
-        u8 feedback_bit = !!((apu->noise.shift_reg & 1) ^ GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM));
-        apu->noise.shift_reg >>= 1;
-        SET_BIT(apu->noise.shift_reg, 14, feedback_bit);
-      } else {
-        apu->noise.seq_c++;
-      }
-
       // Increment noise counter and shift noise shift register
       if (!(apu->noise.shift_reg & 1)) {
         noise_out = apu_get_envelope_volume(&apu->noise.env);
       }
     }
 
+    apu_clock_sequence_counter(&apu->pulse1.seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
+    apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
+    apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
+
+    if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
+      apu->noise.seq_c = 0;
+
+      // Shift noise shift register
+      const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
+      u8 feedback_bit = ((apu->noise.shift_reg & 1) ^ GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM)) != 0;
+      apu->noise.shift_reg >>= 1;
+      SET_BIT(apu->noise.shift_reg, 14, feedback_bit);
+    } else {
+      apu->noise.seq_c++;
+    }
+
     // Mix channels together to get the final sample
-//    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, 0, dmc_out);
+    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -447,13 +437,14 @@ static void apu_init_lookup_tables(apu_t *apu) {
 
   // *************** APU frequency lookup tables ***************
   // TODO: Make these work :(
-  pulse_smp_table[0] = apu->audio_spec.freq / NTSC_CPU_SPEED;
-  triangle_smp_table[0] = apu->audio_spec.freq / NTSC_CPU_SPEED;
-  noise_smp_table[0] = apu->audio_spec.freq / NTSC_CPU_SPEED;
+  pulse_smp_table[0] = (u32) (apu->audio_spec.freq / NTSC_CPU_SPEED);
+  triangle_smp_table[0] = (u32) (apu->audio_spec.freq / NTSC_CPU_SPEED);
+  noise_smp_table[0] = (u32) (apu->audio_spec.freq / NTSC_CPU_SPEED);
   for (int i = 1; i < UINT16_MAX + 1; i++) {
-    pulse_smp_table[i] = apu->audio_spec.freq / NTSC_CPU_SPEED / (i + 1) / 2;
-    triangle_smp_table[i] = apu->audio_spec.freq / NTSC_CPU_SPEED / (i + 1);
-    noise_smp_table[i] = apu->audio_spec.freq / NTSC_CPU_SPEED / i;
+    pulse_smp_table[i] = (u32) (apu->audio_spec.freq / (NTSC_CPU_SPEED / (i + 1) / 2));
+    triangle_smp_table[i] = (u32) (apu->audio_spec.freq / (NTSC_CPU_SPEED / (i + 1)));
+    noise_smp_table[i] = (u32) (apu->audio_spec.freq / (NTSC_CPU_SPEED / (i + 1)));
+//    printf("apu_lookup_tables: i=%d pulse=%d triangle=%d noise=%d\n", i, pulse_smp_table[i], triangle_smp_table[i], noise_smp_table[i]);
   }
 }
 
@@ -465,7 +456,7 @@ void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
 
   apu->noise.shift_reg = 1;
   apu->noise.period = NOISE_PERIOD[0];
-  apu->buf_scale_factor = 8;
+  apu->buf_scale_factor = 16;
 
   // Request audio spec. Init code based on
   // https://stackoverflow.com/questions/10110905/simple-sound-wave-generator-with-sdl-in-c

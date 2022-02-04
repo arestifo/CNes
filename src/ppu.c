@@ -1,14 +1,13 @@
-#include "../include/ppu.h"
-#include "../include/util.h"
-#include "../include/window.h"
-#include "../include/cpu.h"
-#include "../include/cart.h"
-#include "../include/args.h"
+#include "include/ppu.h"
+#include "include/util.h"
+#include "include/window.h"
+#include "include/cpu.h"
+#include "include/cart.h"
+#include "include/args.h"
+#include "include/mappers.h"
 
+// This variable stores the "phase" of the write-twice registers (PPUADDR & PPUSCROLL)
 static bool write_toggle = false;
-
-static u16 ppu_decode_addr(ppu_t *ppu, u16 addr);
-
 const u16 PRERENDER_LINE = 261;
 
 // Reads in a .pal file as the NES system palette
@@ -40,16 +39,7 @@ void ppu_init(nes_t *nes) {
   ppu_t *ppu = nes->ppu;
 
   // Initialize all PPU fields to zero
-  memset(ppu, 0, sizeof *ppu);
-
-  // Set up PPU address space
-  // Load CHR ROM (pattern tables) into PPU $0000-$1FFF
-  // TODO: This only works for mapper 0! Add more mappers later
-  memcpy(ppu->mem, nes->cart->chr_rom, nes->cart->header.chrrom_n * CHRROM_BLOCK_SZ);
-
-  // Set mirroring type from cart (this will get overridden by mappers that control mirroring)
-  // This only applies to static-mirroring mappers
-  ppu->mirroring = nes->cart->header.flags6 & 1 ? MT_VERTICAL : MT_HORIZONTAL;
+  bzero(ppu, sizeof *ppu);
 
   // Set up system palette
   ppu_palette_init(nes, "../palette/palette.pal");
@@ -145,7 +135,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
       u16 tile_idx = 0x2000 | (ppu->vram_addr & 0x0FFF);
 
       // Get the pattern table index from the nametable index
-      u8 pt_idx = ppu_read(ppu, tile_idx);
+      u8 pt_idx = ppu_read(nes, tile_idx);
 
       // **** Read two bytes from the pattern table ****
       u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
@@ -154,8 +144,8 @@ static u32 ppu_render_pixel(nes_t *nes) {
       // 8 for the upper plane (bit 1 of color)
       u16 pt_addr = pt_base + pt_idx * 16 + fine_y;
 
-      u8 pt_val_lo = ppu_read(ppu, pt_addr);
-      u8 pt_val_hi = ppu_read(ppu, pt_addr + 8);
+      u8 pt_val_lo = ppu_read(nes, pt_addr);
+      u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
 
       // **** Extract two pattern table color bits ****
       // We're ANDing with a mask > 1, but we want bit_lo and bit_hi to be in {0..1}
@@ -171,7 +161,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
       u8 attrib_x = (coarse_x & 0x1C) >> 2;
       u8 attrib_y = (coarse_y & 0x1C) >> 2;
       u16 attrib_addr = attrib_x | (attrib_y << 3) | attrib_base | (cur_nt << 10);
-      u8 attrib_val = ppu_read(ppu, 0x2000 + attrib_addr);
+      u8 attrib_val = ppu_read(nes, 0x2000 + attrib_addr);
 
       // **** Extract attribute table bits ****
       // Each attribute table byte controls four sub-tiles of two bytes each
@@ -187,7 +177,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
       u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2));
 
       // Get an index into the system palette from the background palette index
-      bgr_color_idx = palette_idx & 3 ? ppu_read(ppu, palette_idx) : 0;
+      bgr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
     }
   }
   // ************** End background rendering **************
@@ -201,7 +191,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
     if (cur_x > 7 || show_spr_left8) {
       // Detect sprite zero hit
       // sprite zero hit doesn't happen if background rendering is disabled
-      if (show_bgr) {
+      if (bgr_color_idx) {
         for (i8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
           sprite_t maybe_spr0 = ppu->sec_oam[i];
           if (maybe_spr0.sprite0 &&
@@ -228,11 +218,12 @@ static u32 ppu_render_pixel(nes_t *nes) {
 
             // **** Get two pattern table sprite bytes ****
             u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
-            u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
+            u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) &&
+                          !GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 0x1000 : 0;
             u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
 
-            u8 pt_val_lo = ppu_read(ppu, pt_addr);
-            u8 pt_val_hi = ppu_read(ppu, pt_addr + 8);
+            u8 pt_val_lo = ppu_read(nes, pt_addr);
+            u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
 
             // **** Get the color bits: two from PT, two from sprite attributes ****
             u8 pt_fine_x_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
@@ -241,7 +232,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
             u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2) | 0x10);
 
             // **** Get the final sprite color ****
-            spr_color_idx = palette_idx & 3 ? ppu_read(ppu, palette_idx) : 0;
+            spr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
             spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
 
             if (spr_color_idx) break;
@@ -254,7 +245,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
 
   // **************** Pixel multiplexer/display ****************
   u32 final_pixel;
-  u8 uni_bgr_color_idx = ppu_read(ppu, PALETTE_BASE);
+  u8 uni_bgr_color_idx = ppu_read(nes, PALETTE_BASE);
 
   if (!bgr_color_idx && !spr_color_idx)
     final_pixel = ppu_get_palette_color(ppu, uni_bgr_color_idx);
@@ -266,8 +257,8 @@ static u32 ppu_render_pixel(nes_t *nes) {
     // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
     // detection.
     if (sprite_zerohit && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT)) {
-      printf("frame %lu: s0 hit at [%d, %d], bgr_idx=%d spr_idx=%d\n", ppu->frameno, cur_x, cur_y, bgr_color_idx,
-             spr_color_idx);
+//      printf("frame %lu: s0 hit at [%d, %d], bgr_idx=%d spr_idx=%d\n", ppu->frameno, cur_x, cur_y, bgr_color_idx,
+//             spr_color_idx);
       SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
     }
     final_pixel = spr_has_priority ? ppu_get_palette_color(ppu, spr_color_idx)
@@ -310,8 +301,6 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     // Cycle 0 on all visible scanlines is an idle cycle, but we will use it to get the
     // sprites that should be rendered on this scanline
     if (DOT == 0) {
-      // Not entirely sure why this works when scanline=0, but I guess it's not really a problem
-      // (scanline would be UINT16_MAX after subtracting 1 from 0)
       ppu_fill_sec_oam(ppu, ppu->scanline - 1);
 
       // TODO: Even and odd frames have slightly different behavior with idle cycles
@@ -411,7 +400,7 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
 
       // PPUDATA read buffer
       retval = read_buf;
-      read_buf = ppu_read(ppu, temp_addr);
+      read_buf = ppu_read(nes, temp_addr);
 
       return retval;
     default:
@@ -421,8 +410,6 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
 }
 
 void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
-  // These variables check what "phase" of the write-twice registers (PPUADDR & PPUSCROLL)
-  // the PPU is in (which is why they are static -- we want persistent state)
   ppu_t *ppu = nes->ppu;
   u8 vram_inc;
 
@@ -477,7 +464,7 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       break;
     case PPUDATA:
       vram_inc = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_VRAM_INC_BIT) ? 32 : 1;
-      ppu_write(ppu, ppu->vram_addr, val);
+      ppu_write(nes, ppu->vram_addr, val);
 
       ppu->vram_addr += vram_inc;
       break;
@@ -517,50 +504,17 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
   }
 }
 
-static u16 ppu_decode_addr(ppu_t *ppu, u16 addr) {
-  // $3F20-$3FFF are mirrors of $3F00-$3F1F (palette)
-  // $3000-$3EFF are mirrors of $2000-$2EFF (nametables)
-
-  // Nametable mirrored addresses
-  if (addr >= 0x3000 && addr <= 0x3EFF) {
-    // Convert the address by clearing the 12th bit (0x1000)
-    addr &= ~0x1000;
-  } else if (addr >= 0x3F10 && addr <= 0x3F1F) {
-    if ((addr & 3) == 0)
-      addr &= ~0x10;
-  } else if (addr >= 0x3F20 && addr <= 0x3FFF) {
-    addr = ppu_decode_addr(ppu, PALETTE_BASE + addr % 0x20);
-  }
-
-  // PPU mirroring
-  switch (ppu->mirroring) {
-    case MT_HORIZONTAL:
-      // Clear bit 10 to mirror down
-      if ((addr >= 0x2400 && addr <= 0x27FF) || (addr >= 0x2C00 && addr <= 0x2FFF))
-        addr &= ~0x400;
-      break;
-    case MT_VERTICAL:
-      // Clear bit 11 to mirror down
-      if ((addr >= 0x2800 && addr <= 0x2BFF) || (addr >= 0x2C00 && addr <= 0x2FFF))
-        addr &= ~0x800;
-      break;
-    default:
-      printf("ppu_decode_addr: invalid mirroring!\n");
-      exit(EXIT_FAILURE);
-  }
-
-  return addr;
+// Read from CHR ROM/RAM
+inline u8 ppu_read(nes_t *nes, u16 addr) {
+  return nes->mapper->ppu_read(nes, addr);
 }
 
-inline u8 ppu_read(ppu_t *ppu, u16 addr) {
-  return ppu->mem[ppu_decode_addr(ppu, addr)];
-}
-
-inline void ppu_write(ppu_t *ppu, u16 addr, u8 val) {
-  ppu->mem[ppu_decode_addr(ppu, addr)] = val;
+// Write to CHR ROM/RAM
+inline void ppu_write(nes_t *nes, u16 addr, u8 val) {
+  return nes->mapper->ppu_write(nes, addr, val);
 }
 
 void ppu_destroy(nes_t *nes) {
-  // TODO?
+  bzero(nes->cpu, sizeof *nes->cpu);
 }
 

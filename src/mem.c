@@ -1,10 +1,10 @@
-#include "../include/mem.h"
-#include "../include/ppu.h"
-#include "../include/cpu.h"
-#include "../include/cart.h"
-#include "../include/apu.h"
+#include "include/mem.h"
+#include "include/ppu.h"
+#include "include/cpu.h"
+#include "include/cart.h"
+#include "include/apu.h"
+#include "include/mappers.h"
 
-// Split PRG and CHR ROM into 4K pages and swap their respective pointers around
 void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   if (addr >= 0x2000 && addr <= 0x3FFF) {
     ppu_reg_write(nes, addr % 8, val);
@@ -26,11 +26,9 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
 }
 
 u8 cpu_read8(nes_t *nes, u16 addr) {
-  cpu_t *cpu = nes->cpu;
-
   if (addr <= 0x1FFF) {
     // 2KB internal ram
-    return cpu->mem[addr % 0x0800];
+    return nes->cpu->mem[addr % 0x0800];
   } else if (addr >= 0x2000 && addr <= 0x3FFF) {
     // PPU registers ($2000-$2007) are mirrored from $2008-$3FFF
     return ppu_reg_read(nes, addr & 7);
@@ -49,16 +47,8 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     printf("cpu_read8: reading cpu test mode registers is not supported.\n");
     exit(EXIT_FAILURE);
   } else if (addr >= 0x4020 && addr <= 0xFFFF) {
-    // TODO: PRG ROM, PRG RAM, and mapper registers
-
-    // TODO: THIS IS NOT EXTENSIBLE! USE MAPPER FUNCTIONS INSTEAD
-    if (addr >= 0x8000 && addr <= 0xFFFF) {
-      if (nes->cart->header.prgrom_n == 1)
-        return cpu->mem[0x8000 + (addr % 0x4000)];  // NROM-128 has last 16k mirror the first 16k
-      else
-        return cpu->mem[addr];  // NROM-256
-    }
-    printf("cpu_read8: invalid read from $%04X\n", addr); // TODO
+    // Cartridge space; read value from mapper
+    return nes->mapper->cpu_read(nes, addr);
   } else {
     printf("cpu_read8: invalid read from $%04X\n", addr);
     exit(EXIT_FAILURE);

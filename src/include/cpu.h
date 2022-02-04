@@ -52,7 +52,7 @@ typedef struct cpu {
   u8  sp;                // Stack pointer register
   u8  p;                 // Status register
 
-  u64 ticks;               // Cycles
+  u64 ticks;             // Cycles
   u8  mem[CPU_MEM_SZ];   // Pointer to main memory
 
   // Interrupt flags
@@ -97,8 +97,5 @@ void cpu_init(nes_t *nes);
 void cpu_destroy(nes_t *nes);
 void cpu_tick(nes_t *nes);
 void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr);
-
-// Debugging util functions
-void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode);
 
 #endif

@@ -1,9 +1,9 @@
-#include "../include/cpu.h"
-#include "../include/mem.h"
-#include "../include/util.h"
-#include "../include/cart.h"
-#include "../include/args.h"
-#include "../include/ppu.h"
+#include "include/cpu.h"
+#include "include/mem.h"
+#include "include/util.h"
+#include "include/cart.h"
+#include "include/args.h"
+#include "include/ppu.h"
 
 const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 
@@ -19,12 +19,7 @@ void cpu_init(nes_t *nes) {
   cpu->irq_pending = false;
   cpu->nmi_pending = false;
 
-  // Load PRG ROM into CPU memory
-  // TODO: Support more than mapper 0 here (bank switching)
-  memcpy(cpu->mem + 0x8000, nes->cart->prg_rom,
-         PRGROM_BLOCK_SZ * nes->cart->header.prgrom_n);
-
-  // Start program execution
+  // Set PC to start of program
   cpu->pc = cpu_read16(nes, VEC_RESET);
 }
 

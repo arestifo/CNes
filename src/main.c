@@ -1,9 +1,9 @@
-#include "../include/nes.h"
-#include "../include/util.h"
-#include "../include/cpu.h"
-#include "../include/ppu.h"
-#include "../include/window.h"
-#include "../include/args.h"
+#include "include/nes.h"
+#include "include/util.h"
+#include "include/cpu.h"
+#include "include/ppu.h"
+#include "include/window.h"
+#include "include/args.h"
 
 static void keyboard_input(nes_t *nes, SDL_Keycode sc, bool keydown) {
   u8 n;

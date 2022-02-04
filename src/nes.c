@@ -1,11 +1,10 @@
-#include "../include/cpu.h"
-#include "../include/ppu.h"
-#include "../include/nes.h"
-#include "../include/util.h"
-#include "../include/cart.h"
-#include "../include/args.h"
-#include "../include/mapper.h"
-#include "../include/apu.h"
+#include "include/cpu.h"
+#include "include/ppu.h"
+#include "include/util.h"
+#include "include/cart.h"
+#include "include/args.h"
+#include "include/mappers.h"
+#include "include/apu.h"
 
 void nes_init(nes_t *nes, char *cart_fn) {
   nes->cpu    = nes_malloc(sizeof *nes->cpu);
@@ -19,15 +18,17 @@ void nes_init(nes_t *nes, char *cart_fn) {
   nes->ctrl1_sr_buf = 0;
 
   cart_init(nes->cart, cart_fn);
+  mapper_init(nes->mapper, nes->cart);
   cpu_init(nes);
   ppu_init(nes);
   apu_init(nes, 48000, 64);
 }
 
 void nes_destroy(nes_t *nes) {
-  cpu_destroy(nes);
-  ppu_destroy(nes);
   apu_destroy(nes);
+  ppu_destroy(nes);
+  cpu_destroy(nes);
+  mapper_destroy(nes->mapper);
   cart_destroy(nes->cart);
 
   free(nes->cpu);

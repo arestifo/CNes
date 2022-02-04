@@ -51,11 +51,6 @@ typedef enum ppureg {
   PPUDATA     // $2007: PPU VRAM data register (read, write)
 } ppureg_t;
 
-// TODO: Add other mirroring types and support for dynamically changing mirroring
-typedef enum mirroring_type {
-  MT_HORIZONTAL, MT_VERTICAL
-} mirroring_type_t;
-
 typedef struct color {
   u8 r;
   u8 g;
@@ -76,7 +71,6 @@ typedef struct sprite {
 typedef struct ppu {
   // PPU memory
   u8 regs[NUM_PPUREGS];         // PPU internal registers
-  u8 mem[PPU_MEM_SZ];           // PPU memory
   sprite_t oam[OAM_NUM_SPR];    // PPU Object Attribute Memory. Stores 64 sprites for the whole frame
 
   // PPU secondary OAM. Stores 8 sprites for the current scanline
@@ -94,7 +88,6 @@ typedef struct ppu {
   u8 scroll_x;                  // TODO: This shouldn't be necessary
 
   // PPU Flags and metadata
-  mirroring_type_t mirroring;   // What time of mirroring the PPU is using
   bool nmi_occurred;            // Whether the PPU is currently generating NMIs or not
 
   u64 ticks;                    // Number of PPU cycles
@@ -107,8 +100,8 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg);
 void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val);
 
 // Internal PPU read functions. Should only be called by internal PPU functions
-u8 ppu_read(ppu_t *ppu, u16 addr);
-void ppu_write(ppu_t *ppu, u16 addr, u8 val);
+u8 ppu_read(nes_t *nes, u16 addr);
+void ppu_write(nes_t *nes, u16 addr, u8 val);
 
 void ppu_init(nes_t *nes);
 void ppu_tick(nes_t *nes, window_t *wnd, void *pixels);
