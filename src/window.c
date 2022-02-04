@@ -45,7 +45,7 @@ void window_update(window_t *wnd, nes_t *nes) {
       ppu_tick(nes, wnd, pixels);
     }
 
-    if (nes->apu->frame_counter.divider == NTSC_TICKS_PER_SEQ / 4) {
+    if (nes->apu->frame_counter.divider >= NTSC_CPU_SPEED / 240.) {
       nes->apu->frame_counter.divider = 0;
       apu_tick(nes);
     } else {

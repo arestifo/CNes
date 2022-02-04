@@ -31,7 +31,8 @@
 #define VEC_IRQ    0xFFFE
 #define STACK_BASE 0x0100
 
-#define CPU_MEM_SZ 0x10000
+//#define CPU_MEM_SZ 0x10000
+#define CPU_MEM_SZ 0x0800
 
 #define OAM_DMA_ADDR     0x4014
 #define CONTROLLER1_PORT 0x4016
@@ -90,12 +91,12 @@ typedef enum interrupt {
 // Gets addressing mode from opcode.
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
-addrmode_t get_addrmode(u8 opcode);
-u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode);
+addrmode_t cpu_get_addrmode(u8 opcode);
+
 void cpu_set_nz(nes_t *nes, u8 result);
+void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr);
+
 void cpu_init(nes_t *nes);
 void cpu_destroy(nes_t *nes);
 void cpu_tick(nes_t *nes);
-void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr);
-
 #endif

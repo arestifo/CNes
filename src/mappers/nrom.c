@@ -1,5 +1,7 @@
 #include "../include/mappers.h"
 #include "../include/cart.h"
+#include "../include/ppu.h"
+
 u8 nrom_cpu_read(nes_t *nes, u16 addr) {
   cart_t *cart = nes->cart;
 
@@ -23,9 +25,5 @@ void nrom_cpu_write(nes_t *nes, u16 addr, u8 val) {
 }
 
 void nrom_ppu_write(nes_t *nes, u16 addr, u8 val) {
-  u16 eff_addr = mirror_ppu_addr(addr, nes->mapper->mirror_type);
-//  if (eff_addr >= nes->cart->header.chrrom_n * CHRROM_BLOCK_SZ) {
-//    printf("nrom_ppu_write: faulty eff_addr=$%04X max_sz=$%04X\n", eff_addr, nes->cart->header.chrrom_n * CHRROM_BLOCK_SZ);
-//  }
-  nes->cart->chr[eff_addr] = val;
+  nes->cart->chr[mirror_ppu_addr(addr, nes->mapper->mirror_type)] = val;
 }

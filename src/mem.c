@@ -6,7 +6,9 @@
 #include "include/mappers.h"
 
 void cpu_write8(nes_t *nes, u16 addr, u8 val) {
-  if (addr >= 0x2000 && addr <= 0x3FFF) {
+  if (addr <= 0x1FFF) {
+    nes->cpu->mem[addr % 0x0800] = val;
+  } else if (addr >= 0x2000 && addr <= 0x3FFF) {
     ppu_reg_write(nes, addr % 8, val);
   } else if (addr == CONTROLLER1_PORT) {
     if (val & 1) {
@@ -20,8 +22,8 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
     cpu_oam_dma(nes, val << 8);
   } else if (addr >= 0x4000 && addr <= 0x4017) {
     apu_write(nes, addr, val);
-  } else {
-    nes->cpu->mem[addr] = val;
+  } else if (addr >= 0x4020 && addr <= 0xFFFF) {
+    nes->mapper->cpu_write(nes, addr, val);
   }
 }
 

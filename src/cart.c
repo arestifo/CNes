@@ -30,18 +30,16 @@ void cart_init(cart_t *cart, char *cart_fn) {
     fseek(cart_f, TRAINER_SZ, SEEK_CUR);
   }
 
-  // TODO: Support CHR RAM (this is probably mapperno dependent, cart.c is not the right place for it)
-  if (cart->header.chrrom_n == 0) {
-    printf("cart_init: CHR RAM is not implemented yet.\n");
-    exit(EXIT_FAILURE);
-  }
-
   // Read PRG ROM
   cart->prg = nes_malloc(PRGROM_BLOCK_SZ * cart->header.prgrom_n);
   nes_fread(cart->prg, PRGROM_BLOCK_SZ, cart->header.prgrom_n, cart_f);
 
   // Read CHR ROM
-  cart->chr = nes_malloc(CHRROM_BLOCK_SZ * cart->header.chrrom_n);
+  const size_t CHR_SZ = CHRROM_BLOCK_SZ * cart->header.chrrom_n;
+
+  // The lower bound is 0x4000 because I am using the chr buffer directly as cartridge space + vram
+  // TODO: This might not work at all and at the very least it's hacky
+  cart->chr = nes_malloc(CHR_SZ > 0x4000 ? CHR_SZ : 0x4000);
   nes_fread(cart->chr, CHRROM_BLOCK_SZ, cart->header.chrrom_n, cart_f);
 
   nes_fclose(cart_f);

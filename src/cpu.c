@@ -98,7 +98,7 @@ cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
 // https://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
 // I like this method vs. a simple lookup table because this loosely emulates how the 6502
 // internally decodes instructions.
-addrmode_t get_addrmode(u8 opcode) {
+addrmode_t cpu_get_addrmode(u8 opcode) {
   u8 mode_i = opcode % 0x20;
   if (mode_i == 0x00 || mode_i == 0x09 || mode_i == 0x02) {
     if (opcode == 0x20)  // JSR
@@ -198,7 +198,7 @@ void cpu_tick(nes_t *nes) {
   }
 
   u8 opcode = cpu_read8(nes, cpu->pc);
-  addrmode_t mode = get_addrmode(opcode);
+  addrmode_t mode = cpu_get_addrmode(opcode);
 
   u16 operand;
   if (OPERAND_SIZES[mode] == 1)

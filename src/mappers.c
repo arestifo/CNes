@@ -23,11 +23,14 @@ void mapper_init(mapper_t *mapper, cart_t *cart) {
   // There are 255 iNES 1.0 mappers TODO: (low priority) support iNES 2.0
   switch (cart->mapperno) {
     case 0:  // NROM
-      printf("mapper_init: using NROM mapper\n");
+      printf("mapper_init: using NROM mapper (%d)\n", cart->mapperno);
 
       // NROM uses fixed mirroring type, set in cart header
       mapper->mirror_type = cart->fixed_mirror ? MT_VERTICAL : MT_HORIZONTAL;
       break;
+    case 1:  // MMC1
+      printf("mapper_init: using MMC1 mapper (%d)\n", cart->mapperno);
+
     default:
       printf("mapper_init: fatal: unsupported mapper %d!\n", cart->mapperno);
       exit(EXIT_FAILURE);

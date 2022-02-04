@@ -7,7 +7,7 @@
 #define NTSC_CPU_SPEED 1789773.
 
 // Number of CPU ticks per 1/240th of a second. This is the basis of all APU timing
-#define NTSC_TICKS_PER_SEQ ((u32) (NTSC_CPU_SPEED / 240.))
+//#define NTSC_TICKS_PER_SEQ ((u32) (NTSC_CPU_SPEED / 240.))
 
 typedef struct envelope {
   u8 loop: 1;
