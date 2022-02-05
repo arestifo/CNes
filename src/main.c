@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
         }
       }
 
-      // Run the PPU & CPU until we have a frame ready to render to the screen
+      // Generate a frame and display it
       window_update(&window, &nes);
     }
   }

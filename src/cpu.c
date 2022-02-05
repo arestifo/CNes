@@ -167,7 +167,7 @@ void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
   // Copy page of memory to PPU OAM
   bool odd_cycle = cpu->ticks & 1;
   for (int i = 0; i < OAM_NUM_SPR; i++) {
-    ppu->oam[i].data.y_pos    = cpu_read8(nes, cpu_base_addr + (i * 4));
+    ppu->oam[i].data.y_pos    = cpu_read8(nes, cpu_base_addr + (i * 4) + 0);
     ppu->oam[i].data.tile_idx = cpu_read8(nes, cpu_base_addr + (i * 4) + 1);
     ppu->oam[i].data.attr     = cpu_read8(nes, cpu_base_addr + (i * 4) + 2);
     ppu->oam[i].data.x_pos    = cpu_read8(nes, cpu_base_addr + (i * 4) + 3);

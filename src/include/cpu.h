@@ -31,7 +31,7 @@
 #define VEC_IRQ    0xFFFE
 #define STACK_BASE 0x0100
 
-//#define CPU_MEM_SZ 0x10000
+// TODO: Put this in the mapper functions
 #define CPU_MEM_SZ 0x0800
 
 #define OAM_DMA_ADDR     0x4014

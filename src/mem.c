@@ -11,12 +11,8 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   } else if (addr >= 0x2000 && addr <= 0x3FFF) {
     ppu_reg_write(nes, addr % 8, val);
   } else if (addr == CONTROLLER1_PORT) {
-    if (val & 1) {
+    if (val & 1)
       nes->ctrl1_sr = nes->ctrl1_sr_buf;
-      nes->controllers_polling = true;
-    } else {
-      nes->controllers_polling = false;
-    }
   } else if (addr == OAM_DMA_ADDR) {
     // Performs CPU -> PPU OAM DMA. Suspends the CPU for 513 or 514 cycles
     cpu_oam_dma(nes, val << 8);

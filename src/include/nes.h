@@ -32,10 +32,11 @@ typedef struct nes {
   mapper_t *mapper;
   apu_t *apu;
 
-  // Controller information
-  bool controllers_polling;
+  // Controller 1 shift registers
   u8 ctrl1_sr;
   u8 ctrl1_sr_buf;
+
+  // TODO: Controller 2
 } nes_t;
 
 void nes_init(nes_t *nes, char *cart_fn);

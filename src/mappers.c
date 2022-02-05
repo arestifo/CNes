@@ -21,16 +21,17 @@ void (*const mapper_ppu_write_fns[4])(nes_t *, u16, u8) = {
 void mapper_init(mapper_t *mapper, cart_t *cart) {
   // Check if we support the cart's mapper
   // There are 255 iNES 1.0 mappers TODO: (low priority) support iNES 2.0
+
+  // Set fixed mirroring type for mappers that don't control it. This gets overwritten by mappers that control
+  // mirroring themselves (MMC1, MMC3, etc.)
+  mapper->mirror_type = cart->fixed_mirror ? MT_VERTICAL : MT_HORIZONTAL;
   switch (cart->mapperno) {
     case 0:  // NROM
       printf("mapper_init: using NROM mapper (%d)\n", cart->mapperno);
-
-      // NROM uses fixed mirroring type, set in cart header
-      mapper->mirror_type = cart->fixed_mirror ? MT_VERTICAL : MT_HORIZONTAL;
       break;
     case 1:  // MMC1
       printf("mapper_init: using MMC1 mapper (%d)\n", cart->mapperno);
-
+      break;
     default:
       printf("mapper_init: fatal: unsupported mapper %d!\n", cart->mapperno);
       exit(EXIT_FAILURE);

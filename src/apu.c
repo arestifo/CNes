@@ -375,48 +375,52 @@ static void apu_half_frame_tick(apu_t *apu) {
   apu_clock_sweep_unit(&apu->pulse2.sweep, &apu->pulse2.timer, twos_complement);
 }
 
-// Increment APU frame counter. Called approximately 240 times per second
+// Increment APU frame counter.
 void apu_tick(nes_t *nes) {
-  static u32 last_ticks = 0;
   apu_t *apu = nes->apu;
 
-  // Clock frame counter
-  const u8 STEPS_IN_SEQ = apu->frame_counter.seq_mode == 1 ? 5 : 4;
-  if (STEPS_IN_SEQ == 4) {
-    // *********** 4-step sequence mode ***********
-    // Sequence = [0, 1, 2, 3, 0, 1, 2, 3, ...]
-    // Trigger CPU frame IRQ
-    if (apu->frame_counter.step == 3 && !apu->frame_counter.irq_disable) {
-      apu->frame_interrupt = true;
-      // TODO: Fix IRQ :(
+  const u32 TICKS_PER_FRAME_SEQ = 7457 / 2;  // TODO: Derive this number.
+  if (apu->frame_counter.divider >= TICKS_PER_FRAME_SEQ) {
+    apu->frame_counter.divider = 0;
+
+    const u8 STEPS_IN_SEQ = apu->frame_counter.seq_mode == 1 ? 5 : 4;
+    if (STEPS_IN_SEQ == 4) {
+      // *********** 4-step sequence mode ***********
+      // Sequence = [0, 1, 2, 3, 0, 1, 2, 3, ...]
+      // Trigger CPU frame IRQ
+      if (apu->frame_counter.step == 3 && !apu->frame_counter.irq_disable) {
+        apu->frame_interrupt = true;
+        // TODO: Fix IRQ :(
 //      nes->cpu->irq_pending = true;
-    }
+      }
 
-    // Trigger half-frame ticks on every odd sequence step
-    if (apu->frame_counter.step & 1)
-      apu_half_frame_tick(apu);
-
-    apu_quarter_frame_tick(apu);
-  } else {
-    // *********** 5-step sequence mode ***********
-    // Sequence = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4, ...]
-    if (apu->frame_counter.step != 4) {
-      // Trigger half-frame ticks on every even sequence step
-      if (apu->frame_counter.step % 2 == 0)
+      // Trigger half-frame ticks on every odd sequence step
+      if (apu->frame_counter.step & 1)
         apu_half_frame_tick(apu);
 
       apu_quarter_frame_tick(apu);
+    } else {
+      // *********** 5-step sequence mode ***********
+      // Sequence = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4, ...]
+      if (apu->frame_counter.step != 4) {
+        // Trigger half-frame ticks on every even sequence step
+        if (apu->frame_counter.step % 2 == 0)
+          apu_half_frame_tick(apu);
+
+        apu_quarter_frame_tick(apu);
+      }
     }
+
+    // Increment current sequence
+    if (apu->frame_counter.step == STEPS_IN_SEQ - 1)
+      apu->frame_counter.step = 0;
+    else
+      apu->frame_counter.step++;
+  } else {
+    apu->frame_counter.divider++;
   }
 
-  // Increment current sequence
-  if (apu->frame_counter.step == STEPS_IN_SEQ - 1)
-    apu->frame_counter.step = 0;
-  else
-    apu->frame_counter.step++;
-
-//  printf("apu_tick took %dms\n", SDL_GetTicks() - last_ticks);
-  last_ticks = SDL_GetTicks();
+  apu->ticks++;
 }
 
 static void apu_init_lookup_tables(apu_t *apu) {

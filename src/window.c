@@ -13,8 +13,7 @@ void window_init(window_t *wnd) {
     printf("window_init: SDL_CreateWindow() failed: %s\n", SDL_GetError());
 
   // Create RGB pixel_surface from PPU rendered pixel_surface
-  wnd->renderer = SDL_CreateRenderer(wnd->disp_window, -1,
-                                     SDL_RENDERER_ACCELERATED);
+  wnd->renderer = SDL_CreateRenderer(wnd->disp_window, -1,SDL_RENDERER_ACCELERATED);
   if (!wnd->renderer)
     printf("window_init: SDL_GetRenderer() failed: %s\n", SDL_GetError());
 
@@ -35,22 +34,18 @@ void window_update(window_t *wnd, nes_t *nes) {
 
   // Grab rendering surface
   SDL_LockTexture(wnd->texture, NULL, (void **) &pixels, &pitch);
-  u32 last_ticks = SDL_GetTicks();
-//  printf("frame!\n");
   while (!wnd->frame_ready) {
     cpu_tick(nes);
 
     // 3 PPU ticks per CPU cycle
-    while (nes->ppu->ticks != nes->cpu->ticks * 3) {
+    while (nes->ppu->ticks < nes->cpu->ticks * 3)
       ppu_tick(nes, wnd, pixels);
-    }
 
-    if (nes->apu->frame_counter.divider >= NTSC_CPU_SPEED / 240.) {
-      nes->apu->frame_counter.divider = 0;
+    // 2 APU ticks per CPU cycle, but we run the APU at the same rate as the CPU  to increase accuracy.
+    // (The number of CPU ticks per frame sequencer clock is a nice round number (7457), while the number of APU ticks
+    // per frame seq. clock is half that which is a bad ugly decimal)
+    while (nes->apu->ticks < nes->cpu->ticks)
       apu_tick(nes);
-    } else {
-      nes->apu->frame_counter.divider++;
-    }
   }
 
   // Draw the screen texture to the screen

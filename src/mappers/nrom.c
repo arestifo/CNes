@@ -20,7 +20,6 @@ u8 nrom_ppu_read(nes_t *nes, u16 addr) {
 }
 
 void nrom_cpu_write(nes_t *nes, u16 addr, u8 val) {
-  // NROM has no registers!
   printf("nrom_cpu_write: caught junk write to $%04X=$%02X\n", addr, val);
 }
 

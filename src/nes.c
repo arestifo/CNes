@@ -7,15 +7,14 @@
 #include "include/apu.h"
 
 void nes_init(nes_t *nes, char *cart_fn) {
+  bzero(nes, sizeof *nes);
+
   nes->cpu    = nes_malloc(sizeof *nes->cpu);
   nes->ppu    = nes_malloc(sizeof *nes->ppu);
   nes->cart   = nes_malloc(sizeof *nes->cart);
   nes->args   = nes_malloc(sizeof *nes->args);
   nes->mapper = nes_malloc(sizeof *nes->mapper);
   nes->apu    = nes_malloc(sizeof *nes->apu);
-
-  nes->ctrl1_sr = 0;
-  nes->ctrl1_sr_buf = 0;
 
   cart_init(nes->cart, cart_fn);
   mapper_init(nes->mapper, nes->cart);

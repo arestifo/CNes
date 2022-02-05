@@ -294,11 +294,6 @@ static void ppu_fill_sec_oam(ppu_t *ppu, u16 scanline) {
     sprite_t cur_spr = ppu->oam[i];
 
     // Is the sprite in range, and does it already exist in the secondary OAM?
-//    if (cur_spr.data.tile_idx) {
-//      if (scanline >= cur_spr.data.y_pos && scanline < cur_spr.data.y_pos + SPR_HEIGHT) {
-//        ppu->sec_oam[sec_oam_i++] = cur_spr;
-//      }
-//    }
     if (scanline >= cur_spr.data.y_pos && scanline < cur_spr.data.y_pos + SPR_HEIGHT) {
       ppu->sec_oam[sec_oam_i++] = cur_spr;
     }
