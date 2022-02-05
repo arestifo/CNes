@@ -11,7 +11,7 @@ u8 nrom_cpu_read(nes_t *nes, u16 addr) {
     else
       return cart->prg[addr - 0x8000];  // NROM-256
   } else {
-    printf("nrom_cpu_read: invalid mapperno read at $%04X\n", addr);
+    printf("nrom_cpu_read: invalid mapper read at $%04X\n", addr);
   }
 }
 

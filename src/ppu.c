@@ -185,10 +185,12 @@ static u32 ppu_render_pixel(nes_t *nes) {
   // ****************** Sprite rendering ******************
   // Look through each sprite in the secondary OAM and compare their X-positions to the current PPU X
   bool show_spr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
+
+  // TODO: This doesn't work for some reason, it shows junk in the leftmost 8 pixels of the screen
   bool show_spr_left8 = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_LEFT8_BIT);
   bool sprite_zerohit = false;
   if (show_spr) {
-    if (cur_x > 7 || show_spr_left8) {
+    if (cur_x > 7) {
       // Detect sprite zero hit
       // sprite zero hit doesn't happen if background rendering is disabled
       if (bgr_color_idx) {
@@ -198,6 +200,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
               cur_x >= maybe_spr0.data.x_pos && cur_x < maybe_spr0.data.x_pos + 8 &&
               maybe_spr0.data.tile_idx) {
             sprite_zerohit = true;
+            break;
           }
         }
       }
@@ -207,36 +210,48 @@ static u32 ppu_render_pixel(nes_t *nes) {
       // be shown on that scanline.
       for (i8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
         sprite_t cur_spr = ppu->sec_oam[i];
-        if (cur_spr.data.tile_idx) {
-          if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8) {
-            // **** Get sprite characteristics ****
-            sprite_t active_spr = ppu->sec_oam[i];
-            u8 spr_fine_y = cur_y - active_spr.data.y_pos;
-            u8 spr_fine_x = cur_x - active_spr.data.x_pos;
-            bool flip_h = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPH_BIT);
-            bool flip_v = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPV_BIT);
+        if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8) {
+          // **** Get sprite characteristics ****
+          sprite_t active_spr = ppu->sec_oam[i];
+          u8 spr_fine_y = cur_y - active_spr.data.y_pos;
+          u8 spr_fine_x = cur_x - active_spr.data.x_pos;
+          bool flip_h = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPH_BIT);
+          bool flip_v = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPV_BIT);
 
-            // **** Get two pattern table sprite bytes ****
-            u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
-            u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) &&
-                          !GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 0x1000 : 0;
-            u16 pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
+          // **** Get two pattern table sprite bytes ****
+          u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
 
-            u8 pt_val_lo = ppu_read(nes, pt_addr);
-            u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
+          u16 pt_addr, pt_base;
+          if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT)) {
+            // 8x16 sprites
+            // TODO: This doesn't work fully. Horizontal and vertical flipping on 8x16 sprites looks totally busted.
 
-            // **** Get the color bits: two from PT, two from sprite attributes ****
-            u8 pt_fine_x_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
-            u8 pt_color_bits = !!(pt_val_lo & pt_fine_x_mask) | !!(pt_val_hi & pt_fine_x_mask) << 1;
-            u8 attrib_color_bits = active_spr.data.attr & 3;
-            u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2) | 0x10);
-
-            // **** Get the final sprite color ****
-            spr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
-            spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
-
-            if (spr_color_idx) break;
+            // The sprite pattern table addr for 8x16 sprites is determined by the sprite's tile number in OAM:
+            // TTTT TTTP
+            // Where the T bits (bits 1-7) are the tile number and bit 0 is the pattern table base (0x1000 or 0)
+            // That's why we mask the tile index with 0xFE (binary 1111 1110) to get the T bits
+            pt_base = active_spr.data.tile_idx & 1 ? 0x1000 : 0;
+            pt_addr = pt_base + (active_spr.data.tile_idx & 0xFE) * 16 + pt_fine_y_offset;
+          } else {
+            // 8x8 sprites
+            pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
+            pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
           }
+
+          u8 pt_val_lo = ppu_read(nes, pt_addr);
+          u8 pt_val_hi = ppu_read(nes, pt_addr + 8);
+
+          // **** Get the color bits: two from PT, two from sprite attributes ****
+          u8 pt_fine_x_mask = flip_h ? 1 << spr_fine_x : 0x80 >> spr_fine_x;
+          u8 pt_color_bits = !!(pt_val_lo & pt_fine_x_mask) | !!(pt_val_hi & pt_fine_x_mask) << 1;
+          u8 attrib_color_bits = active_spr.data.attr & 3;
+          u16 palette_idx = PALETTE_BASE + (pt_color_bits | (attrib_color_bits << 2) | 0x10);
+
+          // **** Get the final sprite color ****
+          spr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
+          spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
+
+          if (spr_color_idx) break;
         }
       }
     }
@@ -271,7 +286,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
 // Does a linear search through OAM to find up to 8 sprites to render for the given scanline
 static void ppu_fill_sec_oam(ppu_t *ppu, u16 scanline) {
   // Clear the list of sprites to draw (secondary OAM)
-  memset(ppu->sec_oam, 0, SEC_OAM_NUM_SPR * sizeof *ppu->sec_oam);
+  bzero(ppu->sec_oam, SEC_OAM_NUM_SPR * sizeof *ppu->sec_oam);
 
   // Search through OAM to find sprites that are in range
   const u8 SPR_HEIGHT = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 16 : 8;
@@ -279,10 +294,13 @@ static void ppu_fill_sec_oam(ppu_t *ppu, u16 scanline) {
     sprite_t cur_spr = ppu->oam[i];
 
     // Is the sprite in range, and does it already exist in the secondary OAM?
-    if (cur_spr.data.tile_idx) {
-      if (scanline >= cur_spr.data.y_pos && scanline < cur_spr.data.y_pos + SPR_HEIGHT) {
-        ppu->sec_oam[sec_oam_i++] = cur_spr;
-      }
+//    if (cur_spr.data.tile_idx) {
+//      if (scanline >= cur_spr.data.y_pos && scanline < cur_spr.data.y_pos + SPR_HEIGHT) {
+//        ppu->sec_oam[sec_oam_i++] = cur_spr;
+//      }
+//    }
+    if (scanline >= cur_spr.data.y_pos && scanline < cur_spr.data.y_pos + SPR_HEIGHT) {
+      ppu->sec_oam[sec_oam_i++] = cur_spr;
     }
   }
 }
@@ -405,7 +423,6 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
       return retval;
     default:
       printf("ppu_reg_read: cannot read from ppu reg $%02d\n", reg);
-      exit(EXIT_FAILURE);
   }
 }
 
@@ -454,9 +471,6 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       ppu->temp_addr &= ~(3 << 10);
       ppu->temp_addr |= (val & 3) << 10;
 
-      // TODO: Support 8x16 sprites (high priority)
-      if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT))
-        printf("ppu_reg_write: WARNING: 8x16 sprites are not supported yet.\n");
       break;
     case PPUMASK:
       // TODO: Add color emphasizing support and show/hide background support
