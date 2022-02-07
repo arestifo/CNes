@@ -82,8 +82,8 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
         apu->pulse1.lc = LC_LENGTHS[apu->pulse1.lc_idx];
 
       // Restart sequence but not divider (seq_c)
-//      apu->pulse1.seq_idx = 0;
-//      apu->pulse1.seq_c = 0;
+      apu->pulse1.seq_idx = 0;
+      apu->pulse1.seq_c = 0;
       apu->pulse1.env.env_seq_i = 0;
       apu->pulse1.env.env_c = 0;
       break;
@@ -119,8 +119,8 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
         apu->pulse2.lc = LC_LENGTHS[apu->pulse2.lc_idx];
 
       // Restart sequence but not divider (seq_c)
-//      apu->pulse2.seq_idx = 0;
-//      apu->pulse2.seq_c = 0;
+      apu->pulse2.seq_idx = 0;
+      apu->pulse2.seq_c = 0;
       apu->pulse2.env.env_seq_i = 0;
       apu->pulse2.env.env_c = 0;
       break;
@@ -230,11 +230,11 @@ apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dm
 // Pulse channel sequence length is 8, triangle is 32; noise *frequency* is from a 16-entry lookup table
 static inline void
 apu_clock_sequence_counter(f64 *seq_c, u8 *seq_idx, u32 seq_len, f64 smp_per_sec) {
+  *seq_c += 1.;
+
   if (*seq_c >= smp_per_sec) {
     *seq_c -= smp_per_sec;
     *seq_idx = (*seq_idx + 1) % seq_len;
-  } else {
-    *seq_c += 1;
   }
 }
 
@@ -446,10 +446,13 @@ static void apu_init_lookup_tables(apu_t *apu) {
     env_periods[i] = NTSC_CPU_SPEED / (i + 1);
 
   // *************** APU frequency lookup tables ***************
-  for (int i = 0; i < UINT16_MAX; i++) {
-    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
-    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
-    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
+  for (int i = 0; i < UINT16_MAX + 1; i++) {
+//    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
+//    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
+//    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
+    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i) / 2);
+    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i));
+    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i));
   }
 }
 
