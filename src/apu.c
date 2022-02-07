@@ -20,9 +20,9 @@ const u16 NOISE_SEQ_LENS[16] = {4, 8, 16, 32, 64, 96, 128, 160, 202,
                                 254, 380, 508, 762, 1016, 2034, 4068};
 
 // Lookup tables
-f64 pulse_periods[UINT16_MAX + 1];
-f64 triangle_periods[UINT16_MAX + 1];
-f64 noise_periods[UINT16_MAX + 1];
+f64 pulse_periods[2048];
+f64 triangle_periods[2048];
+f64 noise_periods[16];
 
 u32 env_periods[16];
 f64 pulse_volume_table[31];
@@ -319,20 +319,20 @@ static void apu_render_audio(apu_t *apu) {
       }
     }
 
+    // Increment waveform generator counters
     apu_clock_sequence_counter(&apu->pulse1.seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
     apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
     apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
 
+    apu->noise.seq_c += 1;
     if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
       apu->noise.seq_c = 0;
 
       // Shift noise shift register
       const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
-      u8 feedback_bit = ((apu->noise.shift_reg & 1) ^ GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM)) != 0;
+      u8 feedback_bit = (apu->noise.shift_reg & 1) ^ GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM);
       apu->noise.shift_reg >>= 1;
-      SET_BIT(apu->noise.shift_reg, 14, feedback_bit);
-    } else {
-      apu->noise.seq_c++;
+      apu->noise.shift_reg |= feedback_bit << 14;
     }
 
     // Mix channels together to get the final sample
@@ -383,7 +383,7 @@ static void apu_half_frame_tick(apu_t *apu) {
 void apu_tick(nes_t *nes) {
   apu_t *apu = nes->apu;
 
-  const u32 TICKS_PER_FRAME_SEQ = 7457 / 2;  // TODO: Derive this number.
+  const u32 TICKS_PER_FRAME_SEQ = 7457;  // TODO: Derive this number.
   if (apu->frame_counter.divider >= TICKS_PER_FRAME_SEQ) {
     apu->frame_counter.divider = 0;
 
@@ -446,14 +446,13 @@ static void apu_init_lookup_tables(apu_t *apu) {
     env_periods[i] = NTSC_CPU_SPEED / (i + 1);
 
   // *************** APU frequency lookup tables ***************
-  for (int i = 0; i < UINT16_MAX + 1; i++) {
-//    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
-//    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
-//    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
-    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i) / 2);
-    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i));
-    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i));
+  for (int i = 0; i < 2048; i++) {
+    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
+    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
   }
+
+  for (int i = 0; i < 16; i++)
+    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
 }
 
 void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
@@ -463,6 +462,7 @@ void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
   bzero(apu, sizeof *apu);
 
   apu->buf_scale_factor = 16;
+  apu->noise.shift_reg = 1;
 
   // Request audio spec. Init code based on
   // https://stackoverflow.com/questions/10110905/simple-sound-wave-generator-with-sdl-in-c

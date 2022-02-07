@@ -25,7 +25,7 @@
 #define NUM_PPUREGS  8
 
 // Size of total PPU internal memory (2kB)
-#define PPU_VRAM_SZ   0x1000
+//#define PPU_VRAM_SZ   0x1000
 
 // Size of a palette
 #define PALETTE_SZ   64
@@ -71,7 +71,6 @@ typedef struct sprite {
 typedef struct ppu {
   // PPU memory
   u8 regs[NUM_PPUREGS];         // PPU internal registers
-//  u8 vram[PPU_VRAM_SZ];         // Internal PPU VRAM
   sprite_t oam[OAM_NUM_SPR];    // PPU Object Attribute Memory. Stores 64 sprites for the whole frame
 
   // PPU secondary OAM. Stores 8 sprites for the current scanline
