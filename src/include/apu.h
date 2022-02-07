@@ -17,7 +17,7 @@ typedef struct envelope {
   // Envelope divider
   u8 env_volume;
   u8 env_seq_i;
-  u32 env_c;
+  f64 env_c;
 } envelope_t;
 
 typedef struct sweep_unit {
@@ -53,7 +53,7 @@ typedef struct apu {
 
     // Where in the output sequence the channel currently is
     u8 seq_idx;
-    u32 seq_c;
+    f64 seq_c;
   } pulse1;
 
   // ******************** Pulse channel 2 ********************
@@ -78,7 +78,7 @@ typedef struct apu {
 
     // Where in the output sequence the channel currently is
     u8 seq_idx;
-    u32 seq_c;
+    f64 seq_c;
   } pulse2;
 
   // ******************** Triangle channel ********************
@@ -99,7 +99,7 @@ typedef struct apu {
 
     // Where in the output sequence the channel currently is
     u8 seq_idx;
-    u32 seq_c;
+    f64 seq_c;
   } triangle;
 
   // ******************** Noise channel ********************
@@ -120,7 +120,7 @@ typedef struct apu {
 
     u8 lc;
     u16 shift_reg: 15;
-    u32 seq_c;
+    f64 seq_c;
   } noise;
 
   // ******************** DMC channel ********************

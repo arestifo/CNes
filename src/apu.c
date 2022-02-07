@@ -16,17 +16,17 @@ const u8 TRIANGLE_SEQ[32] = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 
 
 const u8 ENVELOPE_SEQ[16] = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
 
-const u16 NOISE_PERIOD[16] = {4, 8, 16, 32, 64, 96, 128, 160, 202,
-                              254, 380, 508, 762, 1016, 2034, 4068};
+const u16 NOISE_SEQ_LENS[16] = {4, 8, 16, 32, 64, 96, 128, 160, 202,
+                                254, 380, 508, 762, 1016, 2034, 4068};
 
 // Lookup tables
-u32 pulse_smp_table[UINT16_MAX + 1];
-u32 triangle_smp_table[UINT16_MAX + 1];
-u32 noise_smp_table[UINT16_MAX + 1];
+f64 pulse_periods[UINT16_MAX + 1];
+f64 triangle_periods[UINT16_MAX + 1];
+f64 noise_periods[UINT16_MAX + 1];
 
 u32 env_periods[16];
-f32 pulse_volume_table[31];
-f32 tnd_volume_table[203];
+f64 pulse_volume_table[31];
+f64 tnd_volume_table[203];
 
 u8 apu_read(nes_t *nes, u16 addr) {
   apu_t *apu = nes->apu;
@@ -35,8 +35,8 @@ u8 apu_read(nes_t *nes, u16 addr) {
   if (addr == 0x4015) {
     apu->frame_interrupt = false;
 
-    u8 retval = !!apu->pulse1.lc | !!apu->pulse2.lc << 1 | !!apu->triangle.lc << 2 |
-                !!apu->noise.lc << 3 | !!apu->frame_interrupt << 6;
+    u8 retval = (apu->pulse1.lc > 0) | (apu->pulse2.lc > 0) << 1 | (apu->triangle.lc > 0) << 2 |
+                (apu->noise.lc > 0) << 3 | (apu->frame_interrupt > 0) << 6;
     return retval;
   } else {
     printf("apu_read: invalid read from $%04X\n", addr);
@@ -156,7 +156,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
     case 0x400E:
       // Noise mode and period
       apu->noise.mode = val >> 7;
-      apu->noise.period = NOISE_PERIOD[val & 0xF];
+      apu->noise.period = val & 0xF;
       break;
     case 0x400F:
       // Noise length counter load
@@ -220,8 +220,8 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
 // Mixes raw channel output into a signed 16-bit sample
 static inline i16
 apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dmc_out) {
-  f32 square_out = pulse_volume_table[pulse1_out + pulse2_out];
-  f32 tnd_out = tnd_volume_table[3 * triangle_out + 2 * noise_out + dmc_out];
+  f64 square_out = pulse_volume_table[pulse1_out + pulse2_out];
+  f64 tnd_out = tnd_volume_table[3 * triangle_out + 2 * noise_out + dmc_out];
 
   return (i16) ((square_out + tnd_out) * INT16_MAX);
 }
@@ -229,9 +229,9 @@ apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dm
 // Increment APU waveform period counter with proper wrap around
 // Pulse channel sequence length is 8, triangle is 32; noise *frequency* is from a 16-entry lookup table
 static inline void
-apu_clock_sequence_counter(u32 *seq_c, u8 *seq_idx, u32 seq_len, u32 smp_per_sec) {
+apu_clock_sequence_counter(f64 *seq_c, u8 *seq_idx, u32 seq_len, f64 smp_per_sec) {
   if (*seq_c >= smp_per_sec) {
-    *seq_c = 0;
+    *seq_c -= smp_per_sec;
     *seq_idx = (*seq_idx + 1) % seq_len;
   } else {
     *seq_c += 1;
@@ -261,8 +261,12 @@ apu_clock_sweep_unit(sweep_unit_t *su, u16 *target_pd, i32 (*negate_func)(i32)) 
 
   // Adjust target period ONLY if the divider's count is zero, su is enabled, and the su unit
   // is not muting the channel.
-  if (su->sweep_c == 0 && su->enabled && !muting)
-    *target_pd = new_pd;
+  if (muting) {
+    *target_pd = 0;
+  } else {
+    if (su->sweep_c == 0 && su->enabled)
+      *target_pd = new_pd;
+  }
 
   // Increment sweep unit divider
   if (su->sweep_c == 0 || su->reload) {
@@ -282,10 +286,10 @@ static inline u8 apu_get_envelope_volume(envelope_t *env) {
 static void apu_render_audio(apu_t *apu) {
   const u32 BYTES_PER_SAMPLE = apu->audio_spec.channels * sizeof(i16);
 
-  const u32 PULSE1_SMP_PER_SEQ = pulse_smp_table[apu->pulse1.timer];
-  const u32 PULSE2_SMP_PER_SEQ = pulse_smp_table[apu->pulse2.timer];
-  const u32 TRIANGLE_SMP_PER_SEQ = triangle_smp_table[apu->triangle.timer];
-  const u32 NOISE_SMP_PER_SEQ = noise_smp_table[apu->noise.period];
+  const f64 PULSE1_SMP_PER_SEQ = pulse_periods[apu->pulse1.timer];
+  const f64 PULSE2_SMP_PER_SEQ = pulse_periods[apu->pulse2.timer];
+  const f64 TRIANGLE_SMP_PER_SEQ = triangle_periods[apu->triangle.timer];
+  const f64 NOISE_SMP_PER_SEQ = noise_periods[apu->noise.period];
 
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
 //  printf("apu_render_audio: bufsz=%d p1 seq_c=%d, p2 seq_c=%d, t seq_c=%d, n seq_c=%d\n",
@@ -427,6 +431,8 @@ static void apu_init_lookup_tables(apu_t *apu) {
   // *************** APU mixer lookup tables ***************
   // Approximation of NES DAC mixer from http://nesdev.com/apu_ref.txt
   // **** Pulse channels ****
+  f64 smp_rate_d = (f64) apu->audio_spec.freq;
+
   for (int i = 0; i < 31; i++)
     pulse_volume_table[i] = 95.52 / (8128.0 / i + 100);
 
@@ -440,15 +446,10 @@ static void apu_init_lookup_tables(apu_t *apu) {
     env_periods[i] = NTSC_CPU_SPEED / (i + 1);
 
   // *************** APU frequency lookup tables ***************
-  // TODO: Make these work :(
-  pulse_smp_table[0] = (u32) (apu->audio_spec.freq / NTSC_CPU_SPEED);
-  triangle_smp_table[0] = (u32) (apu->audio_spec.freq / NTSC_CPU_SPEED);
-  noise_smp_table[0] = (u32) (apu->audio_spec.freq / NTSC_CPU_SPEED);
-  for (int i = 1; i < UINT16_MAX + 1; i++) {
-    pulse_smp_table[i] = (u32) (apu->audio_spec.freq / (NTSC_CPU_SPEED / (i + 1) / 2));
-    triangle_smp_table[i] = (u32) (apu->audio_spec.freq / (NTSC_CPU_SPEED / (i + 1)));
-    noise_smp_table[i] = (u32) (apu->audio_spec.freq / (NTSC_CPU_SPEED / (i + 1)));
-//    printf("apu_lookup_tables: i=%d pulse=%d triangle=%d noise=%d\n", i, pulse_smp_table[i], triangle_smp_table[i], noise_smp_table[i]);
+  for (int i = 0; i < UINT16_MAX; i++) {
+    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
+    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
+    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
   }
 }
 
@@ -458,8 +459,6 @@ void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
   // Initialize all APU state to zero
   bzero(apu, sizeof *apu);
 
-  apu->noise.shift_reg = 1;
-  apu->noise.period = NOISE_PERIOD[0];
   apu->buf_scale_factor = 16;
 
   // Request audio spec. Init code based on
