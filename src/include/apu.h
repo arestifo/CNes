@@ -6,9 +6,6 @@
 // NTSC CPU speed in Hz (~1.78 MHz)
 #define NTSC_CPU_SPEED 1789773.
 
-// Number of CPU ticks per 1/240th of a second. This is the basis of all APU timing
-//#define NTSC_TICKS_PER_SEQ ((u32) (NTSC_CPU_SPEED / 240.))
-
 typedef struct envelope {
   u8 loop: 1;
   u8 disable: 1;
@@ -119,7 +116,8 @@ typedef struct apu {
     u8 r3_unused: 3;
 
     u8 lc;
-    u16 shift_reg: 15;
+//    u16 shift_reg: 15;
+    u32 shift_reg;
     f64 seq_c;
   } noise;
 

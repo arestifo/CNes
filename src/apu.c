@@ -83,7 +83,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
 
       // Restart sequence but not divider (seq_c)
       apu->pulse1.seq_idx = 0;
-      apu->pulse1.seq_c = 0;
+//      apu->pulse1.seq_c = 0;
       apu->pulse1.env.env_seq_i = 0;
       apu->pulse1.env.env_c = 0;
       break;
@@ -120,7 +120,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
 
       // Restart sequence but not divider (seq_c)
       apu->pulse2.seq_idx = 0;
-      apu->pulse2.seq_c = 0;
+//      apu->pulse2.seq_c = 0;
       apu->pulse2.env.env_seq_i = 0;
       apu->pulse2.env.env_c = 0;
       break;
@@ -289,7 +289,7 @@ static void apu_render_audio(apu_t *apu) {
   const f64 PULSE1_SMP_PER_SEQ = pulse_periods[apu->pulse1.timer];
   const f64 PULSE2_SMP_PER_SEQ = pulse_periods[apu->pulse2.timer];
   const f64 TRIANGLE_SMP_PER_SEQ = triangle_periods[apu->triangle.timer];
-  const f64 NOISE_SMP_PER_SEQ = noise_periods[apu->noise.period];
+  const f64 NOISE_SMP_PER_SEQ = noise_periods[apu->noise.period + 1];
 
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
 //  printf("apu_render_audio: bufsz=%d p1 seq_c=%d, p2 seq_c=%d, t seq_c=%d, n seq_c=%d\n",
@@ -326,7 +326,7 @@ static void apu_render_audio(apu_t *apu) {
 
     apu->noise.seq_c += 1;
     if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
-      apu->noise.seq_c = 0;
+      apu->noise.seq_c -= NOISE_SMP_PER_SEQ;
 
       // Shift noise shift register
       const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
@@ -336,7 +336,14 @@ static void apu_render_audio(apu_t *apu) {
     }
 
     // Mix channels together to get the final sample
-    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+//    static int debug = 0;
+//    if (debug == 32) {
+//      debug = 0;
+//      printf("apu_render_audio: p1_out=%d p2_out=%d t_out=%d n_out=%d d_out=%d\n",
+//             pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+//    } else { debug++; }
+//    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, 0, 0, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -452,7 +459,7 @@ static void apu_init_lookup_tables(apu_t *apu) {
   }
 
   for (int i = 0; i < 16; i++)
-    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
+    noise_periods[i] = smp_rate_d / 4 / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
 }
 
 void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {

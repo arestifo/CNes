@@ -48,8 +48,8 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     // Cartridge space; read value from mapper
     return nes->mapper->cpu_read(nes, addr);
   } else {
-    printf("cpu_read8: invalid read from $%04X\n", addr);
-    exit(EXIT_FAILURE);
+//    printf("cpu_read8: invalid read from $%04X\n", addr);
+//    exit(EXIT_FAILURE);
   }
   return 0;
 }

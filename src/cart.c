@@ -31,16 +31,16 @@ void cart_init(cart_t *cart, char *cart_fn) {
   }
 
   // Read PRG ROM
-  cart->prg = nes_malloc(PRGROM_BLOCK_SZ * cart->header.prgrom_n);
-  nes_fread(cart->prg, PRGROM_BLOCK_SZ, cart->header.prgrom_n, cart_f);
+  cart->prg = nes_malloc(INES_PRGROM_BLOCKSZ * cart->header.prgrom_n);
+  nes_fread(cart->prg, INES_PRGROM_BLOCKSZ, cart->header.prgrom_n, cart_f);
 
   // Read CHR ROM
-  const size_t CHR_SZ = CHRROM_BLOCK_SZ * cart->header.chrrom_n;
+  const size_t CHR_SZ = INES_CHRROM_BLOCKSZ * cart->header.chrrom_n;
 
   // The lower bound is 0x4000 because I am using the chr buffer directly as cartridge space + vram
   // TODO: This might not work at all and at the very least it's hacky
   cart->chr = nes_malloc(CHR_SZ > 0x4000 ? CHR_SZ : 0x4000);
-  nes_fread(cart->chr, CHRROM_BLOCK_SZ, cart->header.chrrom_n, cart_f);
+  nes_fread(cart->chr, INES_CHRROM_BLOCKSZ, cart->header.chrrom_n, cart_f);
 
   nes_fclose(cart_f);
   printf("cart_init: loaded cart prgrom=16K*%d chrrom=8K*%d trainer=%s\n",

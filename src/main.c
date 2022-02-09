@@ -66,6 +66,10 @@ int main(int argc, char **argv) {
   nes_init(&nes, argv[1]);
   window_init(&window);
 
+  // TODO: Make more robust CPU logging
+  nes.args->cpu_log_output = false;
+  nes.args->cpu_logf = nes_fopen("../logs/cpu.log", "w");
+
   // TODO: Make this configurable
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);
 
@@ -98,6 +102,8 @@ int main(int argc, char **argv) {
   }
 
   // Clean up
+  nes_fclose(nes.args->cpu_logf);
+
   window_destroy(&window);
   nes_destroy(&nes);
   SDL_Quit();

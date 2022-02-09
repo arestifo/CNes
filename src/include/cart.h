@@ -3,8 +3,8 @@
 
 #include "nes.h"
 
-#define PRGROM_BLOCK_SZ 0x4000
-#define CHRROM_BLOCK_SZ 0x2000
+#define INES_PRGROM_BLOCKSZ 0x4000
+#define INES_CHRROM_BLOCKSZ 0x2000
 #define TRAINER_SZ      0x200
 #define INES_MAGIC      "NES\x1a"
 
