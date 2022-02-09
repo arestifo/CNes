@@ -83,7 +83,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
 
       // Restart sequence but not divider (seq_c)
       apu->pulse1.seq_idx = 0;
-//      apu->pulse1.seq_c = 0;
+      apu->pulse1.seq_c = 0;
       apu->pulse1.env.env_seq_i = 0;
       apu->pulse1.env.env_c = 0;
       break;
@@ -120,7 +120,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
 
       // Restart sequence but not divider (seq_c)
       apu->pulse2.seq_idx = 0;
-//      apu->pulse2.seq_c = 0;
+      apu->pulse2.seq_c = 0;
       apu->pulse2.env.env_seq_i = 0;
       apu->pulse2.env.env_c = 0;
       break;
@@ -128,6 +128,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       // Triangle linear counter control/lc halt and linear counter reload value
       apu->triangle.control_flag = val >> 7;
       apu->triangle.linc_reload_val = val & 0x7F;
+      apu->triangle.linc_reload = true;
       break;
     case 0x400A:
       // Triangle timer low 8 bits
@@ -307,7 +308,7 @@ static void apu_render_audio(apu_t *apu) {
     }
 
     // **** Triangle synth ****
-    if (apu->triangle.lc > 0 && apu->triangle.linc > 0 && apu->status.triangle_enable) {
+    if (apu->triangle.lc > 0 && apu->triangle.timer > 1 && apu->triangle.linc > 0 && apu->status.triangle_enable) {
       triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
     }
 
@@ -342,8 +343,8 @@ static void apu_render_audio(apu_t *apu) {
 //      printf("apu_render_audio: p1_out=%d p2_out=%d t_out=%d n_out=%d d_out=%d\n",
 //             pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
 //    } else { debug++; }
-//    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, 0, 0, dmc_out);
+    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+//    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, 0, 0, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -459,7 +460,7 @@ static void apu_init_lookup_tables(apu_t *apu) {
   }
 
   for (int i = 0; i < 16; i++)
-    noise_periods[i] = smp_rate_d / 4 / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
+    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
 }
 
 void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
