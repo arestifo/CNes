@@ -2,20 +2,20 @@
 #include "include/ppu.h"
 #include "include/cart.h"
 
-u8 (*const mapper_cpu_read_fns[4])(nes_t *, u16) = {
-    nrom_cpu_read, mmc1_cpu_read, NULL, NULL
+u8 (*const mapper_cpu_read_fns[8])(nes_t *, u16) = {
+    nrom_cpu_read, mmc1_cpu_read, NULL, NULL, NULL, NULL, NULL, axrom_cpu_read
 };
 
-u8 (*const mapper_ppu_read_fns[4])(nes_t *, u16) = {
-    nrom_ppu_read, mmc1_ppu_read, NULL, NULL
+u8 (*const mapper_ppu_read_fns[8])(nes_t *, u16) = {
+    nrom_ppu_read, mmc1_ppu_read, NULL, NULL, NULL, NULL, NULL, axrom_ppu_read
 };
 
-void (*const mapper_cpu_write_fns[4])(nes_t *, u16, u8) = {
-    nrom_cpu_write, mmc1_cpu_write, NULL, NULL
+void (*const mapper_cpu_write_fns[8])(nes_t *, u16, u8) = {
+    nrom_cpu_write, mmc1_cpu_write, NULL, NULL, NULL, NULL, NULL, axrom_cpu_write
 };
 
-void (*const mapper_ppu_write_fns[4])(nes_t *, u16, u8) = {
-    nrom_ppu_write, mmc1_ppu_write, NULL, NULL
+void (*const mapper_ppu_write_fns[8])(nes_t *, u16, u8) = {
+    nrom_ppu_write, mmc1_ppu_write, NULL, NULL, NULL, NULL, NULL, axrom_ppu_write
 };
 
 void mapper_init(mapper_t *mapper, cart_t *cart) {
@@ -25,23 +25,26 @@ void mapper_init(mapper_t *mapper, cart_t *cart) {
   // Set fixed mirroring type for mappers that don't control it. This gets overwritten by mappers that control
   // mirroring themselves (MMC1, MMC3, etc.)
   mapper->mirror_type = cart->fixed_mirror ? MT_VERTICAL : MT_HORIZONTAL;
-  switch (cart->mapperno) {
+  switch (cart->mapno) {
     case 0:  // NROM
-      printf("mapper_init: using NROM mapper (%d)\n", cart->mapperno);
+      printf("mapper_init: using NROM mapper (%d)\n", cart->mapno);
       break;
     case 1:  // MMC1
-      printf("mapper_init: using MMC1 mapper (%d)\n", cart->mapperno);
+      printf("mapper_init: using MMC1 mapper (%d)\n", cart->mapno);
+      break;
+    case 7:  // AxROM
+      printf("mapper_init: using AxROM mapper (%d)\n", cart->mapno);
       break;
     default:
-      printf("mapper_init: fatal: unsupported mapper %d!\n", cart->mapperno);
+      printf("mapper_init: fatal: unsupported mapper %d!\n", cart->mapno);
       exit(EXIT_FAILURE);
   }
 
   // Set up the correct mapper function pointers
-  mapper->cpu_read = mapper_cpu_read_fns[cart->mapperno];
-  mapper->cpu_write = mapper_cpu_write_fns[cart->mapperno];
-  mapper->ppu_read = mapper_ppu_read_fns[cart->mapperno];
-  mapper->ppu_write = mapper_ppu_write_fns[cart->mapperno];
+  mapper->cpu_read = mapper_cpu_read_fns[cart->mapno];
+  mapper->cpu_write = mapper_cpu_write_fns[cart->mapno];
+  mapper->ppu_read = mapper_ppu_read_fns[cart->mapno];
+  mapper->ppu_write = mapper_ppu_write_fns[cart->mapno];
 }
 
 void mapper_destroy(mapper_t *mapper) {
@@ -64,7 +67,7 @@ u16 mirror_ppu_addr(u16 addr, mirror_type_t mt) {
     addr = mirror_ppu_addr(PALETTE_BASE + addr % 0x20, mt);
   }
 
-  // PPU mirroring
+  // Nametable mirroring
   switch (mt) {
     case MT_HORIZONTAL:
       // Clear bit 10 to mirror down
@@ -75,6 +78,15 @@ u16 mirror_ppu_addr(u16 addr, mirror_type_t mt) {
       // Clear bit 11 to mirror down
       if ((addr >= 0x2800 && addr <= 0x2BFF) || (addr >= 0x2C00 && addr <= 0x2FFF))
         addr &= ~0x800;
+      break;
+    case MT_1SCR_A:
+      if (addr >= 0x2000 && addr <= 0x2FFF)
+        addr &= ~0xC00;
+      break;
+    case MT_1SCR_B:
+      if (addr >= 0x2000 && addr <= 0x2FFF)
+        addr &= ~0xC00;
+      addr += 0x400;
       break;
     default:
       printf("mirror_ppu_addr: invalid mirroring!\n");

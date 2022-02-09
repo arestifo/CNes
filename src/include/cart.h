@@ -24,7 +24,7 @@ typedef struct cart {
   } header;
 
   // TODO: Maybe clean this stuff up in the future
-  u8 mapperno;      // Mapper number this cart uses
+  u8 mapno;      // Mapper number this cart uses
   u8 fixed_mirror;  // Fixed mirroring type. This only applies to mappers with a fixed mirroring type
   u8 *prg;          // PRG ROM
   u8 *chr;          // CHR ROM/RAM

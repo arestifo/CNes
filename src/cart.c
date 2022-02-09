@@ -48,7 +48,7 @@ void cart_init(cart_t *cart, char *cart_fn) {
          cart->header.flags6 & 0x04 ? "yes" : "no");
 
   cart->fixed_mirror = cart->header.flags6 & 1;
-  cart->mapperno = get_mapper(cart);
+  cart->mapno = get_mapper(cart);
 }
 
 void cart_destroy(cart_t *cart) {

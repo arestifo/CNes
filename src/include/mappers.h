@@ -4,7 +4,7 @@
 #include "nes.h"
 
 typedef enum mirror_type {
-  MT_HORIZONTAL, MT_VERTICAL
+  MT_HORIZONTAL, MT_VERTICAL, MT_1SCR_A, MT_1SCR_B
 } mirror_type_t;
 
 // Supported mappers:
@@ -48,5 +48,12 @@ u8 mmc1_ppu_read(nes_t *nes, u16 addr);
 
 void mmc1_cpu_write(nes_t *nes, u16 addr, u8 val);
 void mmc1_ppu_write(nes_t *nes, u16 addr, u8 val);
+
+// **** AxROM ****
+u8 axrom_cpu_read(nes_t *nes, u16 addr);
+u8 axrom_ppu_read(nes_t *nes, u16 addr);
+
+void axrom_cpu_write(nes_t *nes, u16 addr, u8 val);
+void axrom_ppu_write(nes_t *nes, u16 addr, u8 val);
 
 #endif

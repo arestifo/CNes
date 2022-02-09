@@ -219,8 +219,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
 }
 
 // Mixes raw channel output into a signed 16-bit sample
-static inline i16
-apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dmc_out) {
+static i16 apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dmc_out) {
   f64 square_out = pulse_volume_table[pulse1_out + pulse2_out];
   f64 tnd_out = tnd_volume_table[3 * triangle_out + 2 * noise_out + dmc_out];
 
@@ -229,8 +228,7 @@ apu_mix_audio(u8 pulse1_out, u8 pulse2_out, u8 triangle_out, u8 noise_out, u8 dm
 
 // Increment APU waveform period counter with proper wrap around
 // Pulse channel sequence length is 8, triangle is 32; noise *frequency* is from a 16-entry lookup table
-static inline void
-apu_clock_sequence_counter(f64 *seq_c, u8 *seq_idx, u32 seq_len, f64 smp_per_sec) {
+static void apu_clock_sequence_counter(f64 *seq_c, u8 *seq_idx, u32 seq_len, f64 smp_per_sec) {
   *seq_c += 1.;
 
   if (*seq_c >= smp_per_sec) {
@@ -239,7 +237,7 @@ apu_clock_sequence_counter(f64 *seq_c, u8 *seq_idx, u32 seq_len, f64 smp_per_sec
   }
 }
 
-static inline void apu_clock_envelope(envelope_t *env) {
+static void apu_clock_envelope(envelope_t *env) {
   const u32 ENV_PERIOD = env_periods[env->env_seq_i];
 
   env->env_volume = ENVELOPE_SEQ[env->env_seq_i];
@@ -247,8 +245,7 @@ static inline void apu_clock_envelope(envelope_t *env) {
 }
 
 // Clock an APU su unit, updating a period `target_pd` with its output
-static inline void
-apu_clock_sweep_unit(sweep_unit_t *su, u16 *target_pd, i32 (*negate_func)(i32)) {
+static void apu_clock_sweep_unit(sweep_unit_t *su, u16 *target_pd, i32 (*negate_func)(i32)) {
   // Calculate the new period after shifting
   u16 new_pd = *target_pd >> su->shift;
 
@@ -278,7 +275,7 @@ apu_clock_sweep_unit(sweep_unit_t *su, u16 *target_pd, i32 (*negate_func)(i32)) 
   }
 }
 
-static inline u8 apu_get_envelope_volume(envelope_t *env) {
+static u8 apu_get_envelope_volume(envelope_t *env) {
   // If the envelope disable flag is set, the volume is the envelope's n value
   // Else, return the envelope's current volume
   return env->disable ? env->n : env->env_volume;
@@ -290,7 +287,7 @@ static void apu_render_audio(apu_t *apu) {
   const f64 PULSE1_SMP_PER_SEQ = pulse_periods[apu->pulse1.timer];
   const f64 PULSE2_SMP_PER_SEQ = pulse_periods[apu->pulse2.timer];
   const f64 TRIANGLE_SMP_PER_SEQ = triangle_periods[apu->triangle.timer];
-  const f64 NOISE_SMP_PER_SEQ = noise_periods[apu->noise.period + 1];
+  const f64 NOISE_SMP_PER_SEQ = noise_periods[apu->noise.period];
 
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
 //  printf("apu_render_audio: bufsz=%d p1 seq_c=%d, p2 seq_c=%d, t seq_c=%d, n seq_c=%d\n",
@@ -344,7 +341,7 @@ static void apu_render_audio(apu_t *apu) {
 //             pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
 //    } else { debug++; }
     i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-//    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, 0, 0, dmc_out);
+//    i16 final_sample = apu_mix_audio(0, 0, triangle_out, 0, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }

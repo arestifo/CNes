@@ -29,7 +29,7 @@ static void ppu_palette_init(nes_t *nes, char *palette_fn) {
   SDL_FreeFormat(pixel_fmt);
 }
 
-inline bool ppu_rendering_enabled(ppu_t *ppu) {
+bool ppu_rendering_enabled(ppu_t *ppu) {
   return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) ||
          GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
 }
@@ -46,7 +46,7 @@ void ppu_init(nes_t *nes) {
 }
 
 // Palette mirroring
-static inline u32 ppu_get_palette_color(ppu_t *ppu, u8 color_i) {
+static u32 ppu_get_palette_color(ppu_t *ppu, u8 color_i) {
   // $3F10, $3F14, $3F18, $3F1C are mirrors of $3F00, $3F04, $3F08, $3F0C
   u8 adj_i = color_i;
   if (color_i >= 0x10) {
@@ -58,7 +58,7 @@ static inline u32 ppu_get_palette_color(ppu_t *ppu, u8 color_i) {
 }
 
 // Info from https://wiki.nesdev.com/w/index.php/PPU_scrolling
-static inline void ppu_increment_scroll_y(ppu_t *ppu) {
+static void ppu_increment_scroll_y(ppu_t *ppu) {
   if (ppu_rendering_enabled(ppu)) {
     if ((ppu->vram_addr & 0x7000) != 0x7000) {
       ppu->vram_addr += 0x1000;
@@ -82,7 +82,7 @@ static inline void ppu_increment_scroll_y(ppu_t *ppu) {
   }
 }
 
-static inline void ppu_increment_scroll_x(ppu_t *ppu) {
+static void ppu_increment_scroll_x(ppu_t *ppu) {
   if (ppu_rendering_enabled(ppu)) {
     if (ppu->fine_x < 7) {
       ppu->fine_x++;
@@ -195,19 +195,22 @@ static u32 ppu_render_pixel(nes_t *nes) {
       // sprite zero hit doesn't happen if background rendering is disabled
       if (bgr_color_idx) {
         for (i8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
-          sprite_t maybe_spr0 = ppu->sec_oam[i];
-          if (maybe_spr0.sprite0 &&
-              cur_x >= maybe_spr0.data.x_pos && cur_x < maybe_spr0.data.x_pos + 8 &&
-              maybe_spr0.data.tile_idx) {
-            sprite_zerohit = true;
-            break;
+          sprite_t check_spr0 = ppu->sec_oam[i];
+          u8 spr_x = check_spr0.data.x_pos;
+          if (spr_x < 255) {
+            if (check_spr0.sprite0 && cur_x >= spr_x && cur_x < spr_x + 8 && check_spr0.data.tile_idx) {
+              sprite_zerohit = true;
+              break;
+            }
           }
         }
       }
+    }
 
-      // Get the sprite to be shown from the secondary OAM.
-      // Secondary OAM is initialized at the beginning of every scanline and contains the sprites to
-      // be shown on that scanline.
+    // Get the sprite to be shown from the secondary OAM.
+    // Secondary OAM is initialized at the beginning of every scanline and contains the sprites to
+    // be shown on that scanline.
+    if (cur_x > 7) {
       for (i8 i = SEC_OAM_NUM_SPR - 1; i >= 0; i--) {
         sprite_t cur_spr = ppu->sec_oam[i];
         if (cur_x >= cur_spr.data.x_pos && cur_x < cur_spr.data.x_pos + 8) {
@@ -232,7 +235,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
             // Where the T bits (bits 1-7) are the tile number and bit 0 is the pattern table base (0x1000 or 0)
             // That's why we mask the tile index with 0xFE (binary 1111 1110) to get the T bits
             pt_base = active_spr.data.tile_idx & 1 ? 0x1000 : 0;
-            pt_addr = pt_base + (active_spr.data.tile_idx & 0xFE) * 16 + pt_fine_y_offset + (flip_v ? 1 : 0);
+            pt_addr = pt_base + (active_spr.data.tile_idx & 0xFE) * 16 + pt_fine_y_offset + 0;
           } else {
             // 8x8 sprites
             pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
@@ -252,7 +255,12 @@ static u32 ppu_render_pixel(nes_t *nes) {
           spr_color_idx = palette_idx & 3 ? ppu_read(nes, palette_idx) : 0;
           spr_has_priority = !GET_BIT(active_spr.data.attr, SPRITE_ATTR_PRIORITY_BIT);
 
-          if (spr_color_idx) break;
+          if (spr_color_idx) {
+            // If the sprite pixel here is opaque, we can't have a sprite zero hit
+            if (sprite_zerohit && cur_x == 255)
+              sprite_zerohit = false;
+            break;
+          }
         }
       }
     }
@@ -515,12 +523,12 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
 }
 
 // Read from CHR ROM/RAM
-inline u8 ppu_read(nes_t *nes, u16 addr) {
+u8 ppu_read(nes_t *nes, u16 addr) {
   return nes->mapper->ppu_read(nes, addr);
 }
 
 // Write to CHR ROM/RAM
-inline void ppu_write(nes_t *nes, u16 addr, u8 val) {
+void ppu_write(nes_t *nes, u16 addr, u8 val) {
   nes->mapper->ppu_write(nes, addr, val);
 }
 

@@ -825,7 +825,7 @@ void cpu_tick(nes_t *nes) {
 // Sets the sweep_neg and zero flags based on the result of a computation
 // Can't set carry and overflow flag here (i think?) because they are set
 // differently depending on the instruction
-inline void cpu_set_nz(nes_t *nes, u8 result) {
+void cpu_set_nz(nes_t *nes, u8 result) {
   SET_BIT(nes->cpu->p, N_BIT, (result & 0x80) >> 7);
   SET_BIT(nes->cpu->p, Z_BIT, !result);
 }
