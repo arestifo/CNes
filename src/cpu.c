@@ -190,7 +190,7 @@ static void cpu_handle_irq(nes_t *nes, interrupt_t type) {
 }
 
 // Performs OAM DMA (with cycle counting). Uploads a page of memory from $xx00 to $xxFF where xx
-// is the PPU OAM address (ppu->regs[OAMADDR])
+// is the PPU OAM address (ppu->reg[OAMADDR])
 void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
   cpu_t *cpu = nes->cpu;
   ppu_t *ppu = nes->ppu;
@@ -831,7 +831,7 @@ void cpu_set_nz(nes_t *nes, u8 result) {
 }
 
 // TODO: This function mysteriously breaks things, I think it has something to do with the
-// TODO: cpu_read8 calls that have side effects when used on PPU regs, OAM DMA, controller regs etc
+// TODO: cpu_read8 calls that have side effects when used on PPU reg, OAM DMA, controller reg etc
 void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   u8 num_operands, low, high;
   u16 addr;
@@ -865,7 +865,7 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
       if (opcode == 0x20 || opcode == 0x4C)
         fprintf(log_f, " $%04X                       ", operand);
       else {
-        // We don't want to access regs that have side effects, like PPU regs, OAM DMA,
+        // We don't want to access reg that have side effects, like PPU reg, OAM DMA,
         if (!(operand >= 0x2000 && operand <= 0x3FFF) && !(operand >= 0x4000 && operand <= 0x4020))
           fprintf(log_f, " $%04X = %02X                  ", operand, cpu_read8(nes, operand));
         else

@@ -70,7 +70,7 @@ typedef struct sprite {
 
 typedef struct ppu {
   // PPU memory
-  u8 regs[NUM_PPUREGS];         // PPU internal registers
+  u8 reg[NUM_PPUREGS];         // PPU internal registers
   sprite_t oam[OAM_NUM_SPR];    // PPU Object Attribute Memory. Stores 64 sprites for the whole frame
 
   // PPU secondary OAM. Stores 8 sprites for the current scanline
