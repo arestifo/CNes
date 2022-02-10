@@ -466,7 +466,7 @@ void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
   // Initialize all APU state to zero
   bzero(apu, sizeof *apu);
 
-  apu->buf_scale_factor = 16;
+  apu->buf_scale_factor = 8;
   apu->noise.shift_reg = 1;
 
   // Request audio spec. Init code based on

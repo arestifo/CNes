@@ -30,8 +30,8 @@ static void ppu_palette_init(nes_t *nes, char *palette_fn) {
 }
 
 bool ppu_rendering_enabled(ppu_t *ppu) {
-  return GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT) ||
-         GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
+  return GET_BIT(ppu->reg[PPUMASK], PPUMASK_SHOW_BGR_BIT) ||
+         GET_BIT(ppu->reg[PPUMASK], PPUMASK_SHOW_SPR_BIT);
 }
 
 // Palette from http://www.firebrandx.com/nespalette.html
@@ -126,8 +126,8 @@ static u32 ppu_render_pixel(nes_t *nes) {
   u8 cur_y = ppu->scanline - 1;
 
   // **************** Background rendering ****************
-  bool show_bgr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_BIT);
-  bool show_bgr_left8 = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_BGR_LEFT8_BIT);
+  bool show_bgr = GET_BIT(ppu->reg[PPUMASK], PPUMASK_SHOW_BGR_BIT);
+  bool show_bgr_left8 = GET_BIT(ppu->reg[PPUMASK], PPUMASK_SHOW_BGR_LEFT8_BIT);
   if (show_bgr) {
     if (cur_x > 7 || show_bgr_left8) {
       // **** Get pattern table and attribute values ****
@@ -138,7 +138,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
       u8 pt_idx = ppu_read(nes, tile_idx);
 
       // **** Read two bytes from the pattern table ****
-      u16 pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
+      u16 pt_base = GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_BGR_PT_BASE_BIT) ? 0x1000 : 0;
 
       // Each tile in the pattern table has 16 bytes: 8 for the lower plane (bit 0 of color),
       // 8 for the upper plane (bit 1 of color)
@@ -184,10 +184,10 @@ static u32 ppu_render_pixel(nes_t *nes) {
 
   // ****************** Sprite rendering ******************
   // Look through each sprite in the secondary OAM and compare their X-positions to the current PPU X
-  bool show_spr = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_BIT);
+  bool show_spr = GET_BIT(ppu->reg[PPUMASK], PPUMASK_SHOW_SPR_BIT);
 
   // TODO: This doesn't work for some reason, it shows junk in the leftmost 8 pixels of the screen
-  bool show_spr_left8 = GET_BIT(ppu->regs[PPUMASK], PPUMASK_SHOW_SPR_LEFT8_BIT);
+  bool show_spr_left8 = GET_BIT(ppu->reg[PPUMASK], PPUMASK_SHOW_SPR_LEFT8_BIT);
   bool sprite_zerohit = false;
   if (show_spr) {
     if (cur_x > 7) {
@@ -220,12 +220,12 @@ static u32 ppu_render_pixel(nes_t *nes) {
           u8 spr_fine_x = cur_x - active_spr.data.x_pos;
           bool flip_h = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPH_BIT);
           bool flip_v = GET_BIT(active_spr.data.attr, SPRITE_ATTR_FLIPV_BIT);
+          bool is_8x16 = GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT);
 
           // **** Get two pattern table sprite bytes ****
-          u8 pt_fine_y_offset = flip_v ? 7 - spr_fine_y : spr_fine_y;
+          u8 pt_fine_y_offset = flip_v ? (is_8x16 ? 15 : 7) - spr_fine_y : spr_fine_y;
 
           u16 pt_addr, pt_base;
-          bool is_8x16 = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT);
           if (is_8x16) {
             // 8x16 sprites
             // TODO: This doesn't work fully. Horizontal and vertical flipping on 8x16 sprites looks totally busted.
@@ -235,10 +235,11 @@ static u32 ppu_render_pixel(nes_t *nes) {
             // Where the T bits (bits 1-7) are the tile number and bit 0 is the pattern table base (0x1000 or 0)
             // That's why we mask the tile index with 0xFE (binary 1111 1110) to get the T bits
             pt_base = active_spr.data.tile_idx & 1 ? 0x1000 : 0;
-            pt_addr = pt_base + (active_spr.data.tile_idx & 0xFE) * 16 + pt_fine_y_offset + 0;
+//            pt_addr = pt_base + (active_spr.data.tile_idx & 0xFE) * 16 + pt_fine_y_offset;
+            pt_addr = pt_base + (active_spr.data.tile_idx & ~1) * 16 + pt_fine_y_offset;
           } else {
             // 8x8 sprites
-            pt_base = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
+            pt_base = GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
             pt_addr = pt_base + active_spr.data.tile_idx * 16 + pt_fine_y_offset;
           }
 
@@ -280,10 +281,10 @@ static u32 ppu_render_pixel(nes_t *nes) {
   else {
     // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
     // detection.
-    if (sprite_zerohit && !GET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT)) {
+    if (sprite_zerohit && !GET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT)) {
 //      printf("frame %lu: s0 hit at [%d, %d], bgr_idx=%d spr_idx=%d\n", ppu->frameno, cur_x, cur_y, bgr_color_idx,
 //             spr_color_idx);
-      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
+      SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 1);
     }
     final_pixel = spr_has_priority ? ppu_get_palette_color(ppu, spr_color_idx)
                                    : ppu_get_palette_color(ppu, bgr_color_idx);
@@ -298,7 +299,7 @@ static void ppu_fill_sec_oam(ppu_t *ppu, u16 scanline) {
   bzero(ppu->sec_oam, SEC_OAM_NUM_SPR * sizeof *ppu->sec_oam);
 
   // Search through OAM to find sprites that are in range
-  const u8 SPR_HEIGHT = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 16 : 8;
+  const u8 SPR_HEIGHT = GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 16 : 8;
   for (u8 i = 0, sec_oam_i = 0; i < OAM_NUM_SPR && sec_oam_i < SEC_OAM_NUM_SPR; i++) {
     sprite_t cur_spr = ppu->oam[i];
 
@@ -334,16 +335,16 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       frame_buf[SCANLINE * WINDOW_W + DOT - 1] = pixel;
     } else if (DOT >= 258 && DOT <= 320) {
       // Set OAMADDR to 0
-      ppu->regs[OAMADDR] = 0x00;
+      ppu->reg[OAMADDR] = 0x00;
     }
   } else if (SCANLINE >= 241 && SCANLINE <= 260) {
     // VBlank scanlines
     // Issue NMI at the second dot (dot=1) of the first VBlank scanline
     if (SCANLINE == 241 && DOT == 1) {
       ppu->nmi_occurred = true;
-      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 1);
+      SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 1);
 
-      if (GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_NMI_ENABLE_BIT))
+      if (GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_NMI_ENABLE_BIT))
         nes->cpu->nmi_pending = true;
     }
   } else if (SCANLINE == PRERENDER_LINE) {
@@ -354,11 +355,11 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       wnd->frame_ready = true;
       ppu->frameno++;
       ppu->nmi_occurred = false;
-      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
-      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 0);
+      SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
+      SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 0);
     }
     if (DOT >= 257 && DOT <= 320) {
-      ppu->regs[OAMADDR] = 0x00;
+      ppu->reg[OAMADDR] = 0x00;
     }
     if (DOT >= 280 && DOT <= 304) {
       // **** Copy horizontal T components to V ****
@@ -408,13 +409,13 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
   switch (reg) {
     case PPUSTATUS:
       // Clear vblank bit every PPUSTATUS read
-      retval = ppu->regs[PPUSTATUS];
+      retval = ppu->reg[PPUSTATUS];
       write_toggle = false;
-      SET_BIT(ppu->regs[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
+      SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
       return retval;
     case PPUDATA:
       // Increment VRAM addr by value specified in bit 2 of PPUCTRL
-      vram_inc = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_VRAM_INC_BIT) ? 32 : 1;
+      vram_inc = GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_VRAM_INC_BIT) ? 32 : 1;
       static u8 read_buf;
 
       u16 temp_addr = ppu->vram_addr;
@@ -469,7 +470,7 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       write_toggle ^= true;  // Toggle ppuaddr_written
       break;
     case PPUCTRL:  // $2000
-      ppu->regs[PPUCTRL] = val;
+      ppu->reg[PPUCTRL] = val;
 
       // Copy nametable bits to temp addr
       ppu->temp_addr &= ~(3 << 10);
@@ -478,16 +479,16 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       break;
     case PPUMASK:
       // TODO: Add color emphasizing support and show/hide background support
-      ppu->regs[PPUMASK] = val;
+      ppu->reg[PPUMASK] = val;
       break;
     case PPUDATA:
-      vram_inc = GET_BIT(ppu->regs[PPUCTRL], PPUCTRL_VRAM_INC_BIT) ? 32 : 1;
+      vram_inc = GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_VRAM_INC_BIT) ? 32 : 1;
       ppu_write(nes, ppu->vram_addr, val);
 
       ppu->vram_addr += vram_inc;
       break;
     case OAMADDR:
-      ppu->regs[OAMADDR] = val;
+      ppu->reg[OAMADDR] = val;
       break;
     case OAMDATA:
       if (ppu_rendering_enabled(ppu)) {
@@ -502,8 +503,8 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       // Basically, turn OAMADDR (0x00-0xFF) into a 0-63 index into our sprite_t[64] OAM
       // We do this by masking out the lower two bits (these two bits select the sprite attribute
       // we will change)
-      u8 oam_idx = (ppu->regs[OAMADDR] & 0xFC) >> 2;
-      u8 attr_idx = ppu->regs[OAMADDR] & 3;  // Extract lower two bits
+      u8 oam_idx = (ppu->reg[OAMADDR] & 0xFC) >> 2;
+      u8 attr_idx = ppu->reg[OAMADDR] & 3;  // Extract lower two bits
 
       // Write the value to OAM
       if (attr_idx == 0)
