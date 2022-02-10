@@ -340,8 +340,8 @@ static void apu_render_audio(apu_t *apu) {
 //      printf("apu_render_audio: p1_out=%d p2_out=%d t_out=%d n_out=%d d_out=%d\n",
 //             pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
 //    } else { debug++; }
-    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-//    i16 final_sample = apu_mix_audio(0, 0, triangle_out, 0, dmc_out);
+//    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+    i16 final_sample = apu_mix_audio(0, 0, 0, noise_out, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -389,7 +389,7 @@ void apu_tick(nes_t *nes) {
   apu_t *apu = nes->apu;
 
   const u32 TICKS_PER_FRAME_SEQ = 7457;  // TODO: Derive this number.
-  if (apu->frame_counter.divider >= TICKS_PER_FRAME_SEQ) {
+  if (apu->frame_counter.divider == TICKS_PER_FRAME_SEQ) {
     apu->frame_counter.divider = 0;
 
     const u8 STEPS_IN_SEQ = apu->frame_counter.seq_mode == 1 ? 5 : 4;

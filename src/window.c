@@ -6,14 +6,14 @@
 void window_init(window_t *wnd) {
   // Create the main display window
   wnd->disp_window = SDL_CreateWindow("CNES",
-                                      SDL_WINDOWPOS_CENTERED,
-                                      SDL_WINDOWPOS_CENTERED,
+                                      SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
                                       WINDOW_W, WINDOW_H, SDL_WINDOW_RESIZABLE);
   if (!wnd->disp_window)
     printf("window_init: SDL_CreateWindow() failed: %s\n", SDL_GetError());
 
   // Create RGB pixel_surface from PPU rendered pixel_surface
-  wnd->renderer = SDL_CreateRenderer(wnd->disp_window, -1,SDL_RENDERER_ACCELERATED);
+  wnd->renderer = SDL_CreateRenderer(wnd->disp_window, -1,
+                                     SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
   if (!wnd->renderer)
     printf("window_init: SDL_GetRenderer() failed: %s\n", SDL_GetError());
 

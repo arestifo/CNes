@@ -7,9 +7,9 @@
 #define NTSC_CPU_SPEED 1789773.
 
 typedef struct envelope {
-  u8 loop: 1;
-  u8 disable: 1;
-  u8 n: 4;
+  u8 loop;
+  u8 disable;
+  u8 n;
 
   // Envelope divider
   u8 env_volume;
@@ -18,10 +18,10 @@ typedef struct envelope {
 } envelope_t;
 
 typedef struct sweep_unit {
-  u8 enabled: 1;
-  u8 period: 3;
-  u8 negate: 1;
-  u8 shift: 3;
+  u8 enabled;
+  u8 period;
+  u8 negate;
+  u8 shift;
 
   u32 sweep_c;
   bool reload;
@@ -31,15 +31,15 @@ typedef struct apu {
   // ******************** Pulse channel 1 ********************
   struct {
     // Duty cycle/volume parameters
-    u8 duty: 2;
-    u8 lc_disable: 1;
+    u8 duty;
+    u8 lc_disable;
     envelope_t env;
 
     // Sweep unit
     sweep_unit_t sweep;
 
     // Length counter load value/timer high
-    u8 lc_idx: 5;
+    u8 lc_idx;
 
     // Timer/frequency of output waveform
     u16 timer;
@@ -56,15 +56,15 @@ typedef struct apu {
   // ******************** Pulse channel 2 ********************
   struct {
     // Duty cycle/volume parameters
-    u8 duty: 2;
-    u8 lc_disable: 1;
+    u8 duty;
+    u8 lc_disable;
     envelope_t env;
 
     // Sweep unit parameters
     sweep_unit_t sweep;
 
     // Length counter load value/timer high
-    u8 lc_idx: 5;
+    u8 lc_idx;
 
     // Timer/frequency of output waveform
     u16 timer;
@@ -81,11 +81,11 @@ typedef struct apu {
   // ******************** Triangle channel ********************
   struct {
     // Linear counter flags/parameters
-    u8 control_flag: 1;
-    u8 linc_reload_val: 7;
+    u8 control_flag;
+    u8 linc_reload_val;
 
     // Length counter load value/timer high
-    u8 lc_idx: 5;
+    u8 lc_idx;
 
     u16 timer;
 
@@ -102,18 +102,15 @@ typedef struct apu {
   // ******************** Noise channel ********************
   struct {
     // Volume parameters
-    u8 r1_unused: 2;
-    u8 lc_disable: 1;
+    u8 lc_disable;
     envelope_t env;
 
     // Noise channel parameters
-    u8 mode: 1;
-    u8 r2_unused: 3;
+    u8 mode;
     u16 period;
 
     // Length counter load value
-    u8 lc_idx: 5;
-    u8 r3_unused: 3;
+    u8 lc_idx;
 
     u8 lc;
 //    u16 shift_reg: 15;
@@ -123,13 +120,11 @@ typedef struct apu {
 
   // ******************** DMC channel ********************
   struct {
-    u8 irq_enable: 1;
-    u8 loop: 1;
-    u8 r1_unused: 2;
-    u8 freq_idx: 4;
+    u8 irq_enable;
+    u8 loop;
+    u8 freq_idx;
 
-    u8 r2_unused: 1;
-    u8 direct_load: 7;
+    u8 direct_load;
 
     u16 samp_addr;
     u16 samp_len;
@@ -138,19 +133,18 @@ typedef struct apu {
 
   // ******************** Status register and frame counter  ********************
   struct {
-    u8 sr_unused: 3;
-    u8 dmc_enable: 1;
-    u8 noise_enable: 1;
-    u8 triangle_enable: 1;
-    u8 pulse2_enable: 1;
-    u8 pulse1_enable: 1;
+    u8 sr_unused;
+    u8 dmc_enable;
+    u8 noise_enable;
+    u8 triangle_enable;
+    u8 pulse2_enable;
+    u8 pulse1_enable;
   } status;
 
   // TODO: Frame counter
   struct {
-    u8 seq_mode: 1;
-    u8 irq_disable: 1;
-    u8 r1_unused: 6;
+    u8 seq_mode;
+    u8 irq_disable;
 
     u8 step;
     u32 divider;

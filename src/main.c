@@ -98,6 +98,8 @@ int main(int argc, char **argv) {
 
       // Generate a frame and display it
       window_update(&window, &nes);
+    } else {
+      SDL_Delay(1);
     }
   }
 
