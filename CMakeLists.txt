@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.17)
 project(CNES C)
 
 set(CMAKE_C_STANDARD 11)
-#set(CMAKE_C_FLAGS "-Ofast -Wall")
+#set(CMAKE_C_FLAGS "-0g -Wall -Winline")
 set(CMAKE_C_FLAGS "-Ofast -Wall")
 find_package(SDL2 REQUIRED)
 

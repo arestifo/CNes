@@ -5,13 +5,14 @@
 #include "include/ppu.h"
 #include "include/args.h"
 
+#define OP_FUNC static inline void
+
 // ************Internal CPU functions forward declarations ************
-static void cpu_log_op(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode);
+static void cpu_log_op(nes_t *nes);
 
 // This function is run immediately after getting the opcode and puts the effective operand/address
-// on the address line
-static u16 cpu_get_operand(nes_t *nes);
-
+// into operand
+static bool cpu_get_operand_tick(nes_t *nes, u16 *operand);
 
 // Thanks to https://www.nesdev.org/6502_cpu.txt for great NES 6502 documentation
 // This is just here for logging purposes
@@ -21,71 +22,127 @@ const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 u16 addr_bus = 0;
 u8 data_bus = 0;
 
-// ************ Degbugging ************
-u16 log_operand = 0;
-
 // Lookup tables
 // Addressing mode indexed by opcode
 addrmode_t cpu_op_addrmodes[CPU_NUM_OPCODES];
 
+static void cpu_set_nz(nes_t *nes, u8 result) {
+  SET_BIT(nes->cpu->p, N_BIT, (result & 0x80) >> 7);
+  SET_BIT(nes->cpu->p, Z_BIT, !result);
+}
+
 // Function pointers to CPU instruction handlers
-static void oADC(nes_t *nes) {}
+OP_FUNC oADC(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oAND(nes_t *nes) {}
+OP_FUNC oAND(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oASL(nes_t *nes) {}
+OP_FUNC oASL(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBCC(nes_t *nes) {}
+OP_FUNC oBCC(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBCS(nes_t *nes) {}
+OP_FUNC oBCS(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBEQ(nes_t *nes) {}
+OP_FUNC oBEQ(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBIT(nes_t *nes) {}
+OP_FUNC oBIT(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBMI(nes_t *nes) {}
+OP_FUNC oBMI(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBNE(nes_t *nes) {}
+OP_FUNC oBNE(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBPL(nes_t *nes) {}
+OP_FUNC oBPL(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBRK(nes_t *nes) {}
+OP_FUNC oBRK(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBVC(nes_t *nes) {}
+OP_FUNC oBVC(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oBVS(nes_t *nes) {}
+OP_FUNC oBVS(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oCLC(nes_t *nes) {}
+OP_FUNC oCLC(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oCLD(nes_t *nes) {}
+OP_FUNC oCLD(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oCLI(nes_t *nes) {}
+OP_FUNC oCLI(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oCLV(nes_t *nes) {}
+OP_FUNC oCLV(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oCMP(nes_t *nes) {}
+OP_FUNC oCMP(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oCPX(nes_t *nes) {}
+OP_FUNC oCPX(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oCPY(nes_t *nes) {}
+OP_FUNC oCPY(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oDEC(nes_t *nes) {}
+OP_FUNC oDEC(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oDEX(nes_t *nes) {}
+OP_FUNC oDEX(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oDEY(nes_t *nes) {}
+OP_FUNC oDEY(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oEOR(nes_t *nes) {}
+OP_FUNC oEOR(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oINC(nes_t *nes) {}
+OP_FUNC oINC(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oINX(nes_t *nes) {}
+OP_FUNC oINX(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oINY(nes_t *nes) {}
+OP_FUNC oINY(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oJMP(nes_t *nes) {
+OP_FUNC oJMP(nes_t *nes) {
   cpu_t *cpu = nes->cpu;
-  switch (cpu->op.addrmode) {
+  switch (cpu->op.mode) {
     case ABS:
       assert(cpu->op.cyc == 0 || cpu->op.cyc == 1);
       if (cpu->op.cyc == 0) {
@@ -127,64 +184,148 @@ static void oJMP(nes_t *nes) {
   }
 }
 
-static void oJSR(nes_t *nes) {}
+OP_FUNC oJSR(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oLDA(nes_t *nes) {}
+OP_FUNC oLDA(nes_t *nes) {
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->fetch_op = true;
+    nes->cpu->a = cpu_read8(nes, addr);
+    cpu_set_nz(nes, nes->cpu->a);
+  }
+}
 
-static void oLDX(nes_t *nes) {}
+OP_FUNC oLDX(nes_t *nes) {
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->fetch_op = true;
+    nes->cpu->x = cpu_read8(nes, addr);
+    cpu_set_nz(nes, nes->cpu->x);
+  }
+}
 
-static void oLDY(nes_t *nes) {}
+OP_FUNC oLDY(nes_t *nes) {
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->fetch_op = true;
+    nes->cpu->y = cpu_read8(nes, addr);
+    cpu_set_nz(nes, nes->cpu->y);
+  }
+}
 
-static void oLSR(nes_t *nes) {}
+OP_FUNC oLSR(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oNOP(nes_t *nes) {}
+OP_FUNC oNOP(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oORA(nes_t *nes) {}
+OP_FUNC oORA(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oPHA(nes_t *nes) {}
+OP_FUNC oPHA(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oPHP(nes_t *nes) {}
+OP_FUNC oPHP(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oPLA(nes_t *nes) {}
+OP_FUNC oPLA(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oPLP(nes_t *nes) {}
+OP_FUNC oPLP(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oROL(nes_t *nes) {}
+OP_FUNC oROL(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oROR(nes_t *nes) {}
+OP_FUNC oROR(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oRTI(nes_t *nes) {}
+OP_FUNC oRTI(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oRTS(nes_t *nes) {}
+OP_FUNC oRTS(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oSBC(nes_t *nes) {}
+OP_FUNC oSBC(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oSEC(nes_t *nes) {}
+OP_FUNC oSEC(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oSED(nes_t *nes) {}
+OP_FUNC oSED(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oSEI(nes_t *nes) {}
+OP_FUNC oSEI(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oSTA(nes_t *nes) {}
+OP_FUNC oSTA(nes_t *nes) {
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->fetch_op = true;
+    cpu_write8(nes, addr, nes->cpu->a);
+  }
+}
 
-static void oSTX(nes_t *nes) {}
+OP_FUNC oSTX(nes_t *nes) {
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->fetch_op = true;
+    cpu_write8(nes, addr, nes->cpu->x);
+  }
+}
 
-static void oSTY(nes_t *nes) {}
+OP_FUNC oSTY(nes_t *nes) {
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->fetch_op = true;
+    cpu_write8(nes, addr, nes->cpu->y);
+  }
+}
 
-static void oTAX(nes_t *nes) {}
+OP_FUNC oTAX(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oTAY(nes_t *nes) {}
+OP_FUNC oTAY(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oTSX(nes_t *nes) {}
+OP_FUNC oTSX(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oTXA(nes_t *nes) {}
+OP_FUNC oTXA(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oTXS(nes_t *nes) {}
+OP_FUNC oTXS(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
-static void oTYA(nes_t *nes) {}
+OP_FUNC oTYA(nes_t *nes) {
+  crash_and_burn("Instruction not implemented");
+}
 
 // TODO: Support unofficial opcodes (low priority)
 // Maps opcodes to functions that handle them
+// I'm putting this here because I don't want to forward declare all the op functions :)
 void (*const cpu_op_fns[CPU_NUM_OPCODES])(nes_t *nes) = {
     oBRK, oORA, NULL, NULL, NULL, oORA, oASL, NULL, oPHP, oORA, oASL, NULL, NULL, oORA, oASL, NULL,
     oBPL, oORA, NULL, NULL, NULL, oORA, oASL, NULL, oCLC, oORA, NULL, NULL, NULL, oORA, oASL, NULL,
@@ -206,43 +347,57 @@ void (*const cpu_op_fns[CPU_NUM_OPCODES])(nes_t *nes) = {
 
 static void cpu_set_op(cpu_t *cpu, u8 opcode) {
   cpu->op.code = opcode;
-  cpu->op.addrmode = cpu_op_addrmodes[opcode];
+  cpu->op.mode = cpu_op_addrmodes[opcode];
   cpu->op.handler = cpu_op_fns[opcode];
   cpu->op.cyc = 0;
 }
 
 // Does an operand fetch cycle for the current op. This is called once per cycle and takes a variable number of cycles
-// to complete, depending on the addressing mode. Returns true when the final operand value is calculated and placed
+// to complete, depending on the addressing mode. Returns true when the final operand address is calculated and placed
 // into `operand`. Returns false and does not set `operand` otherwise.
 static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
   cpu_t *cpu = nes->cpu;
   // This doesn't include absolute indexed because that is only used in one instruction (JMP)
   // Absolute indexed is handled in oJMP()
-  switch (cpu->op.addrmode) {
+  switch (cpu->op.mode) {
     case ABS:
-      break;
+      assert(cpu->op.cyc == 0 || cpu->op.cyc == 1);
+      if (cpu->op.cyc == 0) {
+        SET_BYTE_LO(addr_bus, cpu->pc++);
+        cpu->op.cyc++;
+        return false;
+      } else {
+        SET_BYTE_HI(addr_bus, cpu->pc++);
+        *operand = addr_bus;
+        cpu->op.cyc++;
+        return true;
+      }
     case ABS_IDX_X:
-      break;
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ABS_IDX_X");
     case ABS_IDX_Y:
-      break;
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ABS_IDX_Y");
     case REL:
-      break;
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode REL");
     case IMM:
-      break;
+      *operand = cpu->pc++;
+      return true;
     case ZP:
-      break;
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP");
     case ZP_IDX_X:
-      break;
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IDX_X");
     case ZP_IDX_Y:
-      break;
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IDX_Y");
     case ZP_IDX_IND:
-      break;
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IDX_IND");
     case ZP_IND_IDX_Y:
-      break;
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IND_IDX_Y");
     case IMPL_ACCUM:
-      break;
+      // Read data byte and throw it away
+      cpu_read8(nes, cpu->pc++);
+      return true;
     default:
-
+      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode");
+      break;
   }
 }
 
@@ -285,6 +440,9 @@ void cpu_tick(nes_t *nes) {
   cpu_t *cpu = nes->cpu;
 
   if (cpu->fetch_op) {
+    if (nes->args->cpu_log_output)
+      cpu_log_op(nes);
+
     cpu_set_op(cpu, cpu_read8(nes, cpu->pc++));
     cpu->fetch_op = false;
   } else {
@@ -302,7 +460,9 @@ void cpu_init(nes_t *nes) {
   cpu->a = 0;
   cpu->x = 0;
   cpu->y = 0;
-  cpu->ticks = 4;
+
+  // TODO: The mystery of starting ticks == 7... that's what nestest starts at but I want to derive this value.
+  cpu->ticks = 7;
   cpu->p = 0x24;
   cpu->sp = 0xFD;
   cpu->nmi = false;
@@ -321,11 +481,20 @@ void cpu_destroy(nes_t *nes) {
   bzero(nes->cpu, sizeof *nes->cpu);
 }
 
-static void cpu_log_op(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
+static void cpu_log_op(nes_t *nes) {
   u8 num_operands, low, high;
-  cpu_t *cpu;
+  cpu_t *cpu = nes->cpu;
 
-  cpu = nes->cpu;
+  // Get operand for logging purposes
+  u8 opcode = cpu_read8(nes, cpu->pc);
+  addrmode_t mode = get_addrmode(opcode);
+  u8 dbg_operand_sz = OPERAND_SIZES[mode];
+  u16 operand = 0;
+  if (dbg_operand_sz == 2)
+    operand = cpu_read16(nes, cpu->pc + 1);
+  else if (dbg_operand_sz == 1)
+    operand = cpu_read8(nes, cpu->pc + 1);
+
   FILE *log_f = nes->args->cpu_logf;
 
   fprintf(log_f, "%04X  ", cpu->pc);
@@ -416,11 +585,12 @@ static void cpu_log_op(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
 
   // Mark where interrupts occur
   if (cpu->nmi) {
-    fprintf(log_f, " **** NMI occurred ****");
+    fprintf(log_f, " NMI!");
   }
 //  else if (cpu->irq_pending) {
-//    fprintf(log_f, " **** IRQ occurred ****");
+//    fprintf(log_f, " IRQ!");
 //  }
 
   fprintf(log_f, "\n");
+  fflush(log_f);
 }

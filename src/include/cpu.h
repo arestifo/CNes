@@ -71,7 +71,7 @@ typedef enum addrmode {
 typedef struct cpu_op {
   // Opcode, addressing mode, and handling functionof the current operation
   u8 code;
-  addrmode_t addrmode;
+  addrmode_t mode;
   void (*handler)(nes_t *);
 
   // Keep track of the sub-instruction level ticks to do the proper R/W cycles
@@ -117,7 +117,6 @@ typedef enum interrupt {
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
 
-void cpu_set_nz(nes_t *nes, u8 result);
 void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr);
 
 void cpu_init(nes_t *nes);

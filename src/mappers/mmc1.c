@@ -6,12 +6,11 @@
 // DEBUG INCLUDE
 #include "../include/args.h"
 
-// TODO: Set the proper init state for MMC1, this is not working
 u8 mmc1_sr_write_num = 0;
 u8 mmc1_sr = 0;
 
 // These are offsets (each of size _banksz) into the CART PRG and CHR rom, used for switching banks
-u8 mmc1_prg_bank = 0xF;
+u8 mmc1_prg_bank = 0xF;  // Init value for PRG bank seems to be 15, I got crashes with any other value
 u8 mmc1_chr_bank0 = 0;
 u8 mmc1_chr_bank1 = 0;
 
@@ -31,7 +30,7 @@ static void mmc1_reg_write_helper(nes_t *nes, u8 reg_n, u8 val) {
     case 0:
       // ******** Control register ********
       // Mirroring type
-      // TODO: One-screen mirroring
+      // TODO: One-screen mirroring, this works for now but is hacky
       switch (val & 3) {
         case 0:
         case 1:
