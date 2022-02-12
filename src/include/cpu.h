@@ -34,6 +34,8 @@
 // TODO: Put this in the mapper functions
 #define CPU_MEM_SZ 0x0800
 
+#define CPU_NUM_OPCODES 0x100
+
 #define OAM_DMA_ADDR     0x4014
 #define CONTROLLER1_PORT 0x4016
 #define CONTROLLER2_PORT 0x4017
@@ -43,23 +45,6 @@
 // All instructions using these addressing modes incur page cross penalties
 // UNLESS they do a write e.g. ASL, LSR, ROL, ROR, STA, INC, DEC
 #define PAGE_CROSSED(a, b) (((a) & 0x0100) != ((b) & 0x0100))
-
-// The NES uses a MOS Technology 6502 CPU with minimal modifications
-typedef struct cpu {
-  u16 pc;                // Program counter register
-  u8  a;                 // Accumulator register
-  u8  x;                 // X register
-  u8  y;                 // Y register
-  u8  sp;                // Stack pointer register
-  u8  p;                 // Status register
-
-  u64 ticks;             // Cycles
-  u8  mem[CPU_MEM_SZ];   // Pointer to main memory
-
-  // Interrupt flags
-  bool nmi_pending;
-  bool irq_pending;
-} cpu_t;
 
 // Memory addressing modes
 typedef enum addrmode {
@@ -82,6 +67,46 @@ typedef enum addrmode {
   IMPL_ACCUM
 } addrmode_t;
 
+// TODO: Consider making a member of struct cpu
+typedef struct cpu_op {
+  // Opcode, addressing mode, and handling functionof the current operation
+  u8 code;
+  addrmode_t addrmode;
+  void (*handler)(nes_t *);
+
+  // Keep track of the sub-instruction level ticks to do the proper R/W cycles
+  // This is the number of ticks we have spent processing the current opcode *NOT INCLUDING* the original opcode fetch
+  // cycle.
+  u8 cyc;
+} cpu_op_t;
+
+// The NES uses a MOS Technology 6502 CPU with minimal modifications
+typedef struct cpu {
+  u16 pc;                // Program counter register
+  u8  a;                 // Accumulator register
+  u8  x;                 // X register
+  u8  y;                 // Y register
+  u8  sp;                // Stack pointer register
+  u8  p;                 // Status register
+
+  u8  mem[CPU_MEM_SZ];   // Pointer to main memory
+
+  // Interrupt flags
+  bool nmi;
+
+  // All instructions take more than one cycle. What intra-cycle instruction are we on? (0-indexed)
+  u8 subcyc;
+
+  // How many CPU cycles have passed since initialization
+  u64 ticks;
+
+  // The current opcode being processed
+  cpu_op_t op;
+
+  // Should we fetch a new opcode next cycle?
+  bool fetch_op;
+} cpu_t;
+
 typedef enum interrupt {
   INTR_NMI,  // Non-maskable interrupt
   INTR_IRQ,  // Standard interrupt
@@ -91,7 +116,6 @@ typedef enum interrupt {
 // Gets addressing mode from opcode.
 // TODO: Use this function to generate a lookup table at program start instead
 // TODO: of calling this function every instruction decode cycle
-addrmode_t cpu_get_addrmode(u8 opcode);
 
 void cpu_set_nz(nes_t *nes, u8 result);
 void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr);

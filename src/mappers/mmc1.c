@@ -11,7 +11,6 @@ u8 mmc1_sr_write_num = 0;
 u8 mmc1_sr = 0;
 
 // These are offsets (each of size _banksz) into the CART PRG and CHR rom, used for switching banks
-//u8 mmc1_prg_bank = 0;
 u8 mmc1_prg_bank = 0xF;
 u8 mmc1_chr_bank0 = 0;
 u8 mmc1_chr_bank1 = 0;
@@ -25,13 +24,9 @@ u8 mmc1_prg_bankmode = 3;
 // TODO: WRAM R/W protection
 u8 mmc1_wram_enable = 0;
 
-bool mmc1_debug = false;
-
 // Divide cart->prg into 16K chunks
 // arr[0] = first chunk, arr[1] = second chunk, etc
 static void mmc1_reg_write_helper(nes_t *nes, u8 reg_n, u8 val) {
-  if (mmc1_debug)
-    printf("mmc1_reg_write_helper: writing reg_n $%d=%02X\n", reg_n, val);
   switch (reg_n) {
     case 0:
       // ******** Control register ********
@@ -91,9 +86,6 @@ static void mmc1_reg_write_helper(nes_t *nes, u8 reg_n, u8 val) {
 
 u8 mmc1_cpu_read(nes_t *nes, u16 addr) {
   cart_t *crt = nes->cart;
-  if (mmc1_debug)
-    printf("mmc1_cpu_read: addr=$%04X\n", addr);
-
   switch (mmc1_prg_bankmode) {
     case 0:
     case 1:
@@ -155,30 +147,15 @@ u8 mmc1_ppu_read(nes_t *nes, u16 addr) {
         printf("mmc1_ppu_read: invalid CHR banksz, wtf?");
         exit(EXIT_FAILURE);
     }
-  } else {
-    // Palette read
-    // TODO: Is this right??
-    return crt->chr[d_addr];
   }
   return crt->chr[d_addr]; // TODO: ????
 //  printf("mmc1_ppu_read: something weird is happening addr=$%04X d_addr=$%04X\n", addr, d_addr);
 }
 
 void mmc1_cpu_write(nes_t *nes, u16 addr, u8 val) {
-  if (mmc1_debug)
-    printf("mmc1_cpu_write: sr_writeno=%d sr=%02X addr=$%04X val=$%02X\n", mmc1_sr_write_num, mmc1_sr, addr, val);
   if (addr >= 0x8000 && addr <= 0xFFFF) {
     if (val & 0x80) {
-      if (mmc1_debug)
-        printf("mmc1_cpu_write: reset shift reg, write addr=$%04X val=$%02X\n", addr, val);
       // Reset shift register to its initial state
-      // 7  bit  0
-      // ---- ----
-      // Rxxx xxxD
-      // |       |
-      // |       +- Data bit to be shifted into shift register, LSB first
-      // +--------- 1: Reset shift register and write Control with (Control OR $0C),
-      //               locking PRG ROM at $C000-$FFFF to the last bank.
       mmc1_sr_write_num = 0;
       mmc1_sr = 0;
 
@@ -200,7 +177,6 @@ void mmc1_cpu_write(nes_t *nes, u16 addr, u8 val) {
         }
       } else {
         // Shift bit 0 of val into the shift register
-//        SET_BIT(mmc1_sr, 4 - mmc1_sr_write_num, val & 1);
         SET_BIT(mmc1_sr, 5, val & 1);
         mmc1_sr >>= 1;
         mmc1_sr_write_num++;

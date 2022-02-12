@@ -1,140 +1,256 @@
 #include "include/cpu.h"
+#include "include/nes.h"
 #include "include/mem.h"
 #include "include/util.h"
-#include "include/cart.h"
-#include "include/args.h"
 #include "include/ppu.h"
+#include "include/args.h"
 
+// ************Internal CPU functions forward declarations ************
+static void cpu_log_op(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode);
+
+// This function is run immediately after getting the opcode and puts the effective operand/address
+// on the address line
+static u16 cpu_get_operand(nes_t *nes);
+
+
+// Thanks to https://www.nesdev.org/6502_cpu.txt for great NES 6502 documentation
+// This is just here for logging purposes
 const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 
-void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode);
+// TODO: Implement open-bus behavior. This is also unclean and should probably be behind some interface
+u16 addr_bus = 0;
+u8 data_bus = 0;
 
-void cpu_init(nes_t *nes) {
-  // NES power up state
+// ************ Degbugging ************
+u16 log_operand = 0;
+
+// Lookup tables
+// Addressing mode indexed by opcode
+addrmode_t cpu_op_addrmodes[CPU_NUM_OPCODES];
+
+// Function pointers to CPU instruction handlers
+static void oADC(nes_t *nes) {}
+
+static void oAND(nes_t *nes) {}
+
+static void oASL(nes_t *nes) {}
+
+static void oBCC(nes_t *nes) {}
+
+static void oBCS(nes_t *nes) {}
+
+static void oBEQ(nes_t *nes) {}
+
+static void oBIT(nes_t *nes) {}
+
+static void oBMI(nes_t *nes) {}
+
+static void oBNE(nes_t *nes) {}
+
+static void oBPL(nes_t *nes) {}
+
+static void oBRK(nes_t *nes) {}
+
+static void oBVC(nes_t *nes) {}
+
+static void oBVS(nes_t *nes) {}
+
+static void oCLC(nes_t *nes) {}
+
+static void oCLD(nes_t *nes) {}
+
+static void oCLI(nes_t *nes) {}
+
+static void oCLV(nes_t *nes) {}
+
+static void oCMP(nes_t *nes) {}
+
+static void oCPX(nes_t *nes) {}
+
+static void oCPY(nes_t *nes) {}
+
+static void oDEC(nes_t *nes) {}
+
+static void oDEX(nes_t *nes) {}
+
+static void oDEY(nes_t *nes) {}
+
+static void oEOR(nes_t *nes) {}
+
+static void oINC(nes_t *nes) {}
+
+static void oINX(nes_t *nes) {}
+
+static void oINY(nes_t *nes) {}
+
+static void oJMP(nes_t *nes) {
   cpu_t *cpu = nes->cpu;
-  cpu->a = 0;
-  cpu->x = 0;
-  cpu->y = 0;
-  cpu->ticks = 7;
-  cpu->p = 0x24;
-  cpu->sp = 0xFD;
-  cpu->irq_pending = false;
-  cpu->nmi_pending = false;
-
-  // Start program execution
-  cpu->pc = cpu_read16(nes, VEC_RESET);
-}
-
-void cpu_destroy(nes_t *nes) {
-  // This might not be necessary
-  bzero(nes->cpu, sizeof *nes->cpu);
-}
-
-u16 resolve_addr(nes_t *nes, u16 addr, addrmode_t mode) {
-  u8 low, high;
-
-  cpu_t *cpu = nes->cpu;
-  switch (mode) {
-    case ABS_IDX_X:
-      return addr + cpu->x;
-    case ABS_IDX_Y:
-      return addr + cpu->y;
+  switch (cpu->op.addrmode) {
     case ABS:
-    case ZP:
-      return addr;
-    case ZP_IDX_X:
-      return (addr + cpu->x) & 0xFF;
-    case ZP_IDX_Y:
-      return (addr + cpu->y) & 0xFF;
-    case REL:
-      // Fortunately, the 6502 uses two's complement for signed numbers, so casting to s8 works perfectly
-      return cpu->pc + (i8) addr;
-    case ABS_IND:
-      // The only instruction to use this addrmode_t is JMP, which has a bug
-      // where the LSB is read correctly but the MSB is not read from across
-      // the page boundary, but rather wrapped around the page
-      // For example, JMP ($02FF) *should* read the destination LSB from $02FF
-      // and from $0300, but incorrectly reads $02FF and $0200 instead
-      if (PAGE_CROSSED(addr, addr + 1)) {
-        low = cpu_read8(nes, addr);
-        high = cpu_read8(nes, addr & 0xFF00);
-        return low | (high << 8);
+      assert(cpu->op.cyc == 0 || cpu->op.cyc == 1);
+      if (cpu->op.cyc == 0) {
+        SET_BYTE_LO(addr_bus, cpu_read8(nes, cpu->pc++));
+        cpu->op.cyc++;
+      } else {
+        SET_BYTE_HI(addr_bus, cpu_read8(nes, cpu->pc));
+        cpu->pc = addr_bus;
+        cpu->fetch_op = true; // Done with this instruction
       }
-      return cpu_read16(nes, addr);
-    case ZP_IDX_IND:
-      low = cpu_read8(nes, (addr + cpu->x) & 0xFF);
-      high = cpu_read8(nes, (addr + cpu->x + 1) & 0xFF);
-
-      return low | (high << 8);
-    case ZP_IND_IDX_Y:
-      low = cpu_read8(nes, addr);
-      high = cpu_read8(nes, (addr + 1) & 0xFF);
-
-      return (low | (high << 8)) + cpu->y;
-    case IMPL_ACCUM:
-    case IMM:
+      break;
+    case ABS_IND:
+      // This is the only instruction that utilizes absolute indirect addressing so just handle it here
+      // instead of the generic read cycle handler
+      assert(cpu->op.cyc >= 0 && cpu->op.cyc <= 3);
+      if (cpu->op.cyc == 0) {
+        // Fetch pointer lo
+        SET_BYTE_LO(addr_bus, cpu_read8(nes, cpu->pc++));
+        cpu->op.cyc++;
+      } else if (cpu->op.cyc == 1) {
+        // Fetch pointer hi
+        SET_BYTE_HI(addr_bus, cpu_read8(nes, cpu->pc++));
+        cpu->op.cyc++;
+      } else if (cpu->op.cyc == 2) {
+        // Fetch *pointer lo to PC, addr_bus now contains pointer
+        SET_BYTE_LO(cpu->pc, cpu_read8(nes, addr_bus));
+        cpu->op.cyc++;
+      } else {
+        // Final cycle, set PC hi byte to *(pointer + 1)
+        // The pointer increment does not cross page boundaries, so basically don't increment the upper byte
+        // of PC
+        u16 hi_addr = ((addr_bus + 1) & 0xFF) | (addr_bus & ~0xFF);
+        SET_BYTE_HI(cpu->pc, cpu_read8(nes, hi_addr));
+        cpu->fetch_op = true;
+      }
+      break;
     default:
-      printf("resolve_addr: requested vram_addr for invalid vram_addr mode %d\n", mode);
-      return 0;
+      crash_and_burn("oJMP: invalid JMP addressing mode");
   }
 }
 
-// Having two functions to resolve addresses is sub-optimal and a byproduct of some poor choices I
-// made early on in CPU development. This seems to count cycles pretty well so whatever
-// I designed the address decoder like this because it avoided having a massive switch case for
-// every instruction to count cycles properly. This function count cycles for every addressing mode
-// accurately without bloat in cpu_tick()
-static u16
-cpu_resolve_addr(nes_t *nes, u16 addr, addrmode_t mode, bool is_write) {
-  u8 low, high;
-  u16 retval;
+static void oJSR(nes_t *nes) {}
 
+static void oLDA(nes_t *nes) {}
+
+static void oLDX(nes_t *nes) {}
+
+static void oLDY(nes_t *nes) {}
+
+static void oLSR(nes_t *nes) {}
+
+static void oNOP(nes_t *nes) {}
+
+static void oORA(nes_t *nes) {}
+
+static void oPHA(nes_t *nes) {}
+
+static void oPHP(nes_t *nes) {}
+
+static void oPLA(nes_t *nes) {}
+
+static void oPLP(nes_t *nes) {}
+
+static void oROL(nes_t *nes) {}
+
+static void oROR(nes_t *nes) {}
+
+static void oRTI(nes_t *nes) {}
+
+static void oRTS(nes_t *nes) {}
+
+static void oSBC(nes_t *nes) {}
+
+static void oSEC(nes_t *nes) {}
+
+static void oSED(nes_t *nes) {}
+
+static void oSEI(nes_t *nes) {}
+
+static void oSTA(nes_t *nes) {}
+
+static void oSTX(nes_t *nes) {}
+
+static void oSTY(nes_t *nes) {}
+
+static void oTAX(nes_t *nes) {}
+
+static void oTAY(nes_t *nes) {}
+
+static void oTSX(nes_t *nes) {}
+
+static void oTXA(nes_t *nes) {}
+
+static void oTXS(nes_t *nes) {}
+
+static void oTYA(nes_t *nes) {}
+
+// TODO: Support unofficial opcodes (low priority)
+// Maps opcodes to functions that handle them
+void (*const cpu_op_fns[CPU_NUM_OPCODES])(nes_t *nes) = {
+    oBRK, oORA, NULL, NULL, NULL, oORA, oASL, NULL, oPHP, oORA, oASL, NULL, NULL, oORA, oASL, NULL,
+    oBPL, oORA, NULL, NULL, NULL, oORA, oASL, NULL, oCLC, oORA, NULL, NULL, NULL, oORA, oASL, NULL,
+    oJSR, oAND, NULL, NULL, oBIT, oAND, oROL, NULL, oPLP, oAND, oROL, NULL, oBIT, oAND, oROL, NULL,
+    oBMI, oAND, NULL, NULL, NULL, oAND, oROL, NULL, oSEC, oAND, NULL, NULL, NULL, oAND, oROL, NULL,
+    oRTI, oEOR, NULL, NULL, NULL, oEOR, oLSR, NULL, oPHA, oEOR, oLSR, NULL, oJMP, oEOR, oLSR, NULL,
+    oBVC, oEOR, NULL, NULL, NULL, oEOR, oLSR, NULL, oCLI, oEOR, NULL, NULL, NULL, oEOR, oLSR, NULL,
+    oRTS, oADC, NULL, NULL, NULL, oADC, oROR, NULL, oPLA, oADC, oROR, NULL, oJMP, oADC, oROR, NULL,
+    oBVS, oADC, NULL, NULL, NULL, oADC, oROR, NULL, oSEI, oADC, NULL, NULL, NULL, oADC, oROR, NULL,
+    NULL, oSTA, NULL, NULL, oSTY, oSTA, oSTX, NULL, oDEY, NULL, oTXA, NULL, oSTY, oSTA, oSTX, NULL,
+    oBCC, oSTA, NULL, NULL, oSTY, oSTA, oSTX, NULL, oTYA, oSTA, oTXS, NULL, NULL, oSTA, NULL, NULL,
+    oLDY, oLDA, oLDX, NULL, oLDY, oLDA, oLDX, NULL, oTAY, oLDA, oTAX, NULL, oLDY, oLDA, oLDX, NULL,
+    oBCS, oLDA, NULL, NULL, oLDY, oLDA, oLDX, NULL, oCLV, oLDA, oTSX, NULL, oLDY, oLDA, oLDX, NULL,
+    oCPY, oCMP, NULL, NULL, oCPY, oCMP, oDEC, NULL, oINY, oCMP, oDEX, NULL, oCPY, oCMP, oDEC, NULL,
+    oBNE, oCMP, NULL, NULL, NULL, oCMP, oDEC, NULL, oCLD, oCMP, NULL, NULL, NULL, oCMP, oDEC, NULL,
+    oCPX, oSBC, NULL, NULL, oCPX, oSBC, oINC, NULL, oINX, oSBC, oNOP, NULL, oCPX, oSBC, oINC, NULL,
+    oBEQ, oSBC, NULL, NULL, NULL, oSBC, oINC, NULL, oSED, oSBC, NULL, NULL, NULL, oSBC, oINC, NULL
+};
+
+static void cpu_set_op(cpu_t *cpu, u8 opcode) {
+  cpu->op.code = opcode;
+  cpu->op.addrmode = cpu_op_addrmodes[opcode];
+  cpu->op.handler = cpu_op_fns[opcode];
+  cpu->op.cyc = 0;
+}
+
+// Does an operand fetch cycle for the current op. This is called once per cycle and takes a variable number of cycles
+// to complete, depending on the addressing mode. Returns true when the final operand value is calculated and placed
+// into `operand`. Returns false and does not set `operand` otherwise.
+static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
   cpu_t *cpu = nes->cpu;
-  switch (mode) {
+  // This doesn't include absolute indexed because that is only used in one instruction (JMP)
+  // Absolute indexed is handled in oJMP()
+  switch (cpu->op.addrmode) {
     case ABS:
-    case ZP:
-    case REL:
-      break;
-    case ABS_IND:
-      cpu->ticks += 2;
       break;
     case ABS_IDX_X:
-      if (PAGE_CROSSED(addr, addr + cpu->x) || is_write)
-        cpu->ticks++;
       break;
     case ABS_IDX_Y:
-      if (PAGE_CROSSED(addr, addr + cpu->y) || is_write)
-        cpu->ticks++;
+      break;
+    case REL:
+      break;
+    case IMM:
+      break;
+    case ZP:
       break;
     case ZP_IDX_X:
+      break;
     case ZP_IDX_Y:
-      cpu->ticks++;
       break;
     case ZP_IDX_IND:
-      cpu->ticks += 3;
       break;
     case ZP_IND_IDX_Y:
-      low = cpu_read8(nes, addr);
-      high = cpu_read8(nes, (addr + 1) & 0xFF);
-      retval = low | (high << 8);
-      if (PAGE_CROSSED(retval, retval + cpu->y) || is_write)
-        cpu->ticks++;
-      cpu->ticks += 2;
-      return retval + cpu->y;
+      break;
     case IMPL_ACCUM:
-    case IMM:
+      break;
     default:
-      printf("resolve_addr: requested vram_addr for invalid vram_addr mode\n");
-      return 0;
+
   }
-  return resolve_addr(nes, addr, mode);
 }
 
 // Gets the addressing mode from an opcode. Based on the chart from:
 // https://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
 // I like this method vs. a simple lookup table because this loosely emulates how the 6502
 // internally decodes instructions.
-addrmode_t get_addrmode(u8 opcode) {
+static addrmode_t get_addrmode(u8 opcode) {
   u8 mode_i = opcode % 0x20;
   if (mode_i == 0x00 || mode_i == 0x09 || mode_i == 0x02) {
     if (opcode == 0x20)  // JSR
@@ -159,682 +275,54 @@ addrmode_t get_addrmode(u8 opcode) {
   return IMPL_ACCUM;
 }
 
-// TODO: If possible, add interrupt hijacking support
-// (it's likely not possible without sub-instruction level emulation)
-// https://wiki.nesdev.com/w/index.php/CPU_interrupts
-static void cpu_handle_irq(nes_t *nes, interrupt_t type) {
-  cpu_t *cpu = nes->cpu;
-  cpu_push16(nes, cpu->pc);
-
-  u16 vec;
-  if (type == INTR_BRK) {
-    SET_BIT(cpu->p, B_BIT, 1);
-    vec = VEC_IRQ;
-  } else if (type == INTR_IRQ) {
-    SET_BIT(cpu->p, B_BIT, 0);
-    vec = VEC_IRQ;
-  } else if (type == INTR_NMI) {
-    SET_BIT(cpu->p, B_BIT, 0);
-    vec = VEC_NMI;
-  } else {
-    printf("cpu_handle_irq: invalid interrupt type %d\n", type);
-    exit(EXIT_FAILURE);
-  }
-
-  // Push processor status and disable interrupts
-  cpu_push8(nes, cpu->p);
-  SET_BIT(cpu->p, I_BIT, 1);
-
-  // Jump to interrupt handler
-  cpu->pc = cpu_read16(nes, vec);
+static void cpu_init_tables() {
+  for (int i = 0; i < CPU_NUM_OPCODES; i++)
+    cpu_op_addrmodes[i] = get_addrmode(i);
 }
 
-// Performs OAM DMA (with cycle counting). Uploads a page of memory from $xx00 to $xxFF where xx
-// is the PPU OAM address (ppu->reg[OAMADDR])
-void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr) {
-  cpu_t *cpu = nes->cpu;
-  ppu_t *ppu = nes->ppu;
-
-  // Copy page of memory to PPU OAM
-  bool odd_cycle = cpu->ticks & 1;
-  for (int i = 0; i < OAM_NUM_SPR; i++) {
-    ppu->oam[i].data.y_pos    = cpu_read8(nes, cpu_base_addr + (i * 4));
-    ppu->oam[i].data.tile_idx = cpu_read8(nes, cpu_base_addr + (i * 4) + 1);
-    ppu->oam[i].data.attr     = cpu_read8(nes, cpu_base_addr + (i * 4) + 2);
-    ppu->oam[i].data.x_pos    = cpu_read8(nes, cpu_base_addr + (i * 4) + 3);
-    ppu->oam[i].sprite0       = i == 0;
-  }
-
-  // We just did 256 reads/writes, so 512 cycles total + 1 to wait for pending writes
-  cpu->ticks += 513;
-
-  // And for some reason, if this was an odd cycle add an additional cycle
-  if (odd_cycle)
-    cpu->ticks++;
-}
-
+// Accurately emulates a single CPU cycle
 void cpu_tick(nes_t *nes) {
-  // Get opcode at current PC
-  u8 opcode, old_carry;
-  u16 operand, addr, result;
-  addrmode_t mode;
-  bool v_cond;
-  cpu_t *cpu;
+  cpu_t *cpu = nes->cpu;
 
-  // Output current CPU state for debugging
-  // We have to re-do all instruction fetching here because we don't want to
-  // increment cycles
-  cpu = nes->cpu;
-
-  // For now, CPU debugging breaks things TODO: Fix this
-//  assert(!nes->args->cpu_log_output);
-
-  if (nes->args->cpu_log_output) {
-    u8 debug_opcode;
-    u16 debug_operand;
-    addrmode_t debug_mode;
-
-    debug_opcode = cpu_read8(nes, cpu->pc);
-    debug_mode = get_addrmode(debug_opcode);
-    if (OPERAND_SIZES[debug_mode] == 1)
-      debug_operand = cpu_read8(nes, cpu->pc + 1);
-    else if (OPERAND_SIZES[debug_mode] == 2)
-      debug_operand = cpu_read16(nes, cpu->pc + 1);
-    else  // Just to quiet the compiler
-      debug_operand = 0;
-    dump_cpu(nes, debug_opcode, debug_operand, debug_mode);
+  if (cpu->fetch_op) {
+    cpu_set_op(cpu, cpu_read8(nes, cpu->pc++));
+    cpu->fetch_op = false;
+  } else {
+    cpu->op.handler(nes);
   }
 
-  // Check for interrupts
-  if (cpu->irq_pending) {
-    cpu_handle_irq(nes, INTR_IRQ);
-    cpu->irq_pending = false;
-  }
-
-  if (cpu->nmi_pending) {
-    cpu_handle_irq(nes, INTR_NMI);
-    cpu->nmi_pending = false;
-  }
-
-  opcode = cpu_read8(nes, cpu->pc);
-  mode = get_addrmode(opcode);
-
-  if (OPERAND_SIZES[mode] == 1)
-    operand = cpu_read8(nes, cpu->pc + 1);
-  else if (OPERAND_SIZES[mode] == 2)
-    operand = cpu_read16(nes, cpu->pc + 1);
-
-  cpu->pc += OPERAND_SIZES[mode] + 1;  // +1 for the opcode itself
-  cpu->ticks += OPERAND_SIZES[mode] + 1;
-  switch (opcode) {
-    case 0x4C:  // JMP
-    case 0x6C:
-      cpu->pc = cpu_resolve_addr(nes, operand, mode, false);
-      break;
-    case 0xA2:  // LDX
-    case 0xA6:
-    case 0xB6:
-    case 0xAE:
-    case 0xBE:
-      if (mode == IMM)
-        cpu->x = operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        cpu->x = cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->x);
-      break;
-    case 0x20:  // JSR
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      cpu_push16(nes, cpu->pc - 1);
-      cpu->pc = addr;
-      cpu->ticks += 3;
-      break;
-    case 0x60:  // RTS
-      addr = cpu_pop16(nes) + 1;
-      cpu->pc = addr;
-      cpu->ticks += 5;  // From adjusting the PC (not sure why JSR doesn't need this)
-      break;
-    case 0xEA:  // NOP
-      cpu->ticks++;
-      break;
-    case 0x38:  // SEC
-      SET_BIT(cpu->p, C_BIT, 1);
-      cpu->ticks++;
-      break;
-    case 0xF8:  // SED
-      SET_BIT(cpu->p, D_BIT, 1);
-      cpu->ticks++;
-      break;
-    case 0x78:  // SEI
-      SET_BIT(cpu->p, I_BIT, 1);
-      cpu->ticks++;
-      break;
-    case 0x18:  // CLC
-      SET_BIT(cpu->p, C_BIT, 0);
-      cpu->ticks++;
-      break;
-    case 0xD8:  // CLD
-      SET_BIT(cpu->p, D_BIT, 0);
-      cpu->ticks++;
-      break;
-    case 0x58:  // CLI
-      SET_BIT(cpu->p, I_BIT, 0);
-      cpu->ticks++;
-      break;
-    case 0xB8:  // CLV
-      SET_BIT(cpu->p, V_BIT, 0);
-      cpu->ticks++;
-      break;
-    case 0x90:  // BCC
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      if (!(cpu->p & C_MASK)) {
-        cpu->pc = addr;
-        cpu->ticks++;
-      }
-      break;
-    case 0xB0:  // BCS
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      if (cpu->p & C_MASK) {
-        cpu->pc = addr;
-        cpu->ticks++;
-      }
-      break;
-    case 0xD0:  // BNE
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      if (!(cpu->p & Z_MASK)) {
-        cpu->pc = addr;
-        cpu->ticks++;
-      }
-      break;
-    case 0xF0:  // BEQ
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      if (cpu->p & Z_MASK) {
-        cpu->pc = addr;
-        cpu->ticks++;
-      }
-      break;
-    case 0x10:  // BPL
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      if (!(cpu->p & N_MASK)) {
-        cpu->pc = addr;
-        cpu->ticks++;
-      }
-      break;
-    case 0x30:  // BMI
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      if (cpu->p & N_MASK) {
-        cpu->pc = addr;
-        cpu->ticks++;
-      }
-      break;
-    case 0x50:  // BVC
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      if (!(cpu->p & V_MASK)) {
-        cpu->pc = addr;
-        cpu->ticks++;
-      }
-      break;
-    case 0x70:  // BVS
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      if (cpu->p & V_MASK) {
-        cpu->pc = addr;
-        cpu->ticks++;
-      }
-      break;
-    case 0xA9:  // LDA
-    case 0xA5:
-    case 0xB5:
-    case 0xAD:
-    case 0xBD:
-    case 0xB9:
-    case 0xA1:
-    case 0xB1:
-      if (mode == IMM)
-        cpu->a = operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        cpu->a = cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->a);
-      break;
-    case 0xA0:  // LDY
-    case 0xA4:
-    case 0xB4:
-    case 0xAC:
-    case 0xBC:
-      if (mode == IMM) {
-        cpu->y = operand;
-      } else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        cpu->y = cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->y);
-      break;
-    case 0x85:  // STA
-    case 0x95:
-    case 0x8D:
-    case 0x9D:
-    case 0x99:
-    case 0x81:
-    case 0x91:
-      addr = cpu_resolve_addr(nes, operand, mode, true);
-      cpu_write8(nes, addr, cpu->a);
-      cpu->ticks++;
-      break;
-    case 0x86:  // STX
-    case 0x96:
-    case 0x8E:
-      addr = cpu_resolve_addr(nes, operand, mode, true);
-      cpu_write8(nes, addr, cpu->x);
-      cpu->ticks++;
-      break;
-    case 0x84:  // STY
-    case 0x94:
-    case 0x8C:
-      addr = cpu_resolve_addr(nes, operand, mode, true);
-      cpu_write8(nes, addr, cpu->y);
-      cpu->ticks++;
-      break;
-    case 0x24:  // BIT: n and z flag behavior is slightly different so we can't
-    case 0x2C:  // use cpu_set_nz()
-      addr = cpu_resolve_addr(nes, operand, mode, false);
-      result = cpu_read8(nes, addr);
-
-      // Set flags
-      SET_BIT(cpu->p, Z_BIT, !(result & cpu->a));
-      SET_BIT(cpu->p, V_BIT, (result & V_MASK) >> V_BIT);
-      SET_BIT(cpu->p, N_BIT, (result & N_MASK) >> N_BIT);
-      cpu->ticks++;
-      break;
-    case 0x48:  // PHA
-      cpu_push8(nes, cpu->a);
-      cpu->ticks += 2;
-      break;
-    case 0x08:  // PHP
-      cpu_push8(nes, cpu->p | B_MASK);
-      cpu->ticks += 2;
-      break;
-    case 0x68:  // PLA
-      cpu->a = cpu_pop8(nes);
-      cpu_set_nz(nes, cpu->a);
-      cpu->ticks += 3;
-      break;
-    case 0x28:  // PLP
-      result = cpu_pop8(nes) | U_MASK;
-      cpu->p = result & ~B_MASK;
-      cpu->ticks += 3;
-      break;
-    case 0x29:  // AND
-    case 0x25:
-    case 0x35:
-    case 0x2D:
-    case 0x3D:
-    case 0x39:
-    case 0x21:
-    case 0x31:
-      if (mode == IMM)
-        cpu->a &= operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        cpu->a &= cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->a);
-      break;
-    case 0x09:  // ORA
-    case 0x05:
-    case 0x15:
-    case 0x0D:
-    case 0x1D:
-    case 0x19:
-    case 0x01:
-    case 0x11:
-      if (mode == IMM)
-        cpu->a |= operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        cpu->a |= cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->a);
-      break;
-    case 0x49:  // EOR
-    case 0x45:
-    case 0x55:
-    case 0x4D:
-    case 0x5D:
-    case 0x59:
-    case 0x41:
-    case 0x51:
-      if (mode == IMM)
-        cpu->a ^= operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        cpu->a ^= cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->a);
-      break;
-    case 0xC9:  // CMP
-    case 0xC5:
-    case 0xD5:
-    case 0xCD:
-    case 0xDD:
-    case 0xD9:
-    case 0xC1:
-    case 0xD1:
-      if (mode == IMM)
-        result = operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        result = cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->a - result);
-
-      // Set carry bit
-      SET_BIT(cpu->p, C_BIT, cpu->a >= result);
-      break;
-    case 0xE0:  // CPX
-    case 0xE4:
-    case 0xEC:
-      if (mode == IMM)
-        result = operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        result = cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->x - result);
-
-      // Set carry bit
-      SET_BIT(cpu->p, C_BIT, cpu->x >= result);
-      break;
-    case 0xC0:  // CPY
-    case 0xC4:
-    case 0xCC:
-      if (mode == IMM)
-        result = operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        result = cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-      cpu_set_nz(nes, cpu->y - result);
-
-      // Set carry bit
-      SET_BIT(cpu->p, C_BIT, cpu->y >= result);
-      break;
-    case 0x69:  // ADC
-    case 0x65:
-    case 0x75:
-    case 0x6D:
-    case 0x7D:
-    case 0x79:
-    case 0x61:
-    case 0x71:
-      if (mode == IMM)
-        result = operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        result = cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-
-      // Overflow detection
-      // If negate + negate = pos, or pos + pos = negate
-      // TODO: I really gotta clean up the overflow condition check
-      old_carry = cpu->p & C_MASK;
-      v_cond = ((cpu->a & 0x80) && (result & 0x80) && !((cpu->a + result + old_carry) & 0x80)) ||
-               (!(cpu->a & 0x80) && !(result & 0x80) && ((cpu->a + result + old_carry) & 0x80));
-      SET_BIT(cpu->p, V_BIT, v_cond);
-
-      // Carry flag
-      SET_BIT(cpu->p, C_BIT, cpu->a + result + old_carry > 0xFF);
-
-      cpu->a += result + old_carry;
-      cpu_set_nz(nes, cpu->a);
-      break;
-    case 0xE9:  // SBC
-    case 0xE5:
-    case 0xF5:
-    case 0xED:
-    case 0xFD:
-    case 0xF9:
-    case 0xE1:
-    case 0xF1:
-      // TODO: This is just a copy paste. Gross!
-      if (mode == IMM)
-        result = ~operand;
-      else {
-        addr = cpu_resolve_addr(nes, operand, mode, false);
-        result = ~cpu_read8(nes, addr);
-        cpu->ticks++;
-      }
-
-      // Overflow detection
-      // If negate + negate = pos, or pos + pos = negate
-      old_carry = cpu->p & C_MASK;
-      v_cond = ((cpu->a & 0x80) && (result & 0x80) && !((cpu->a + result + old_carry) & 0x80)) ||
-               (!(cpu->a & 0x80) && !(result & 0x80) && ((cpu->a + result + old_carry) & 0x80));
-      SET_BIT(cpu->p, V_BIT, v_cond);
-
-      // Carry flag checking uses 0xFFFF since result is a u16
-      SET_BIT(cpu->p, C_BIT, cpu->a + result + old_carry > 0xFFFF);
-
-      cpu->a += result + old_carry;
-      cpu_set_nz(nes, cpu->a);
-      break;
-    case 0xE8:  // INX
-      cpu->x++;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->x);
-      break;
-    case 0xC8:  // INY
-      cpu->y++;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->y);
-      break;
-    case 0xCA:  // DEX
-      cpu->x--;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->x);
-      break;
-    case 0x88:  // DEY
-      cpu->y--;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->y);
-      break;
-    case 0xAA:  // TAX
-      cpu->x = cpu->a;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->x);
-      break;
-    case 0xA8:  // TAY
-      cpu->y = cpu->a;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->y);
-      break;
-    case 0xBA:  // TSX
-      cpu->x = cpu->sp;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->x);
-      break;
-    case 0x8A:  // TXA
-      cpu->a = cpu->x;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->a);
-      break;
-    case 0x9A:  // TXS
-      cpu->sp = cpu->x;
-      cpu->ticks++;
-      break;
-    case 0x98:  // TYA
-      cpu->a = cpu->y;
-      cpu->ticks++;
-      cpu_set_nz(nes, cpu->a);
-      break;
-    case 0x40:  // RTI
-      result = cpu_pop8(nes) | U_MASK;
-      cpu->p = result & ~B_MASK;
-      cpu->pc = cpu_pop16(nes);
-      cpu->ticks += 5;
-      break;
-    case 0x4A:  // LSR
-    case 0x46:
-    case 0x56:
-    case 0x4E:
-    case 0x5E:
-      if (mode == IMPL_ACCUM) {
-        SET_BIT(cpu->p, C_BIT, cpu->a & C_MASK);
-        cpu->a >>= 1;
-        cpu->ticks++;
-        cpu_set_nz(nes, cpu->a);
-      } else {
-        addr = cpu_resolve_addr(nes, operand, mode, true);
-        result = cpu_read8(nes, addr);
-        SET_BIT(cpu->p, C_BIT, result & C_MASK);
-
-        // This looks confusing, but actually RMW instructions on the 6502
-        // have a "dummy" write, and this emulates that.
-        cpu_write8(nes, addr, result);
-        result >>= 1;
-
-        cpu_write8(nes, addr, result);
-        cpu_set_nz(nes, result);
-        cpu->ticks += 3;
-      }
-      break;
-    case 0x0A:  // ASL
-    case 0x06:
-    case 0x16:
-    case 0x0E:
-    case 0x1E:
-      if (mode == IMPL_ACCUM) {
-        SET_BIT(cpu->p, C_BIT, (cpu->a & 0x80) >> 7);
-        cpu->a <<= 1;
-        cpu->ticks++;
-        cpu_set_nz(nes, cpu->a);
-      } else {
-        addr = cpu_resolve_addr(nes, operand, mode, true);
-        result = cpu_read8(nes, addr);
-        SET_BIT(cpu->p, C_BIT, (result & 0x80) >> 7);
-
-        cpu_write8(nes, addr, result);
-        result <<= 1;
-
-        cpu_write8(nes, addr, result);
-        cpu_set_nz(nes, result);
-        cpu->ticks += 3;
-      }
-      break;
-    case 0x6A:  // ROR
-    case 0x66:
-    case 0x76:
-    case 0x6E:
-    case 0x7E:
-      old_carry = cpu->p & C_MASK;
-      if (mode == IMPL_ACCUM) {
-        SET_BIT(cpu->p, C_BIT, cpu->a & C_MASK);
-        cpu->a >>= 1;
-        cpu->a |= old_carry << 7;
-        cpu->ticks++;
-        cpu_set_nz(nes, cpu->a);
-      } else {
-        addr = cpu_resolve_addr(nes, operand, mode, true);
-        result = cpu_read8(nes, addr);
-        SET_BIT(cpu->p, C_BIT, result & C_MASK);
-
-        cpu_write8(nes, addr, result);
-        result >>= 1;
-        result |= old_carry << 7;
-
-        cpu_write8(nes, addr, result);
-        cpu_set_nz(nes, result);
-        cpu->ticks += 3;
-      }
-      break;
-    case 0x2A:  // ROL
-    case 0x26:
-    case 0x36:
-    case 0x2E:
-    case 0x3E:
-      old_carry = cpu->p & C_MASK;
-      if (mode == IMPL_ACCUM) {
-        SET_BIT(cpu->p, C_BIT, (cpu->a & 0x80) >> 7);
-        cpu->a <<= 1;
-        cpu->a |= old_carry;
-        cpu->ticks++;
-        cpu_set_nz(nes, cpu->a);
-      } else {
-        addr = cpu_resolve_addr(nes, operand, mode, true);
-        result = cpu_read8(nes, addr);
-        SET_BIT(cpu->p, C_BIT, (result & 0x80) >> 7);
-
-        cpu_write8(nes, addr, result);
-        result <<= 1;
-        result |= old_carry;
-
-        cpu_write8(nes, addr, result);
-        cpu_set_nz(nes, result);
-        cpu->ticks += 3;
-      }
-      break;
-    case 0xE6:  // INC
-    case 0xF6:
-    case 0xEE:
-    case 0xFE:
-      addr = cpu_resolve_addr(nes, operand, mode, true);
-      result = cpu_read8(nes, addr);
-
-      cpu_write8(nes, addr, result);
-      result++;
-
-      cpu_set_nz(nes, result);
-      cpu_write8(nes, addr, result);
-      cpu->ticks += 3;
-      break;
-    case 0xC6:  // DEC
-    case 0xD6:
-    case 0xCE:
-    case 0xDE:
-      addr = cpu_resolve_addr(nes, operand, mode, true);
-      result = cpu_read8(nes, addr);
-
-      cpu_write8(nes, addr, result);
-      result--;
-
-      cpu_set_nz(nes, result);
-      cpu_write8(nes, addr, result);
-      cpu->ticks += 3;
-      break;
-    case 0x00:  // BRK
-      cpu_handle_irq(nes, INTR_BRK);
-      break;
-    default:
-      printf("cpu_tick $%04X: unsupported op 0x%02X (%s)\n",
-             cpu->pc - (OPERAND_SIZES[mode] + 1), opcode, cpu_opcode_tos(opcode));
-      exit(EXIT_FAILURE);
-  }
+  cpu->ticks++;
 }
 
-// Sets the sweep_neg and zero flags based on the result of a computation
-// Can't set carry and overflow flag here (i think?) because they are set
-// differently depending on the instruction
-void cpu_set_nz(nes_t *nes, u8 result) {
-  SET_BIT(nes->cpu->p, N_BIT, (result & 0x80) >> 7);
-  SET_BIT(nes->cpu->p, Z_BIT, !result);
+void cpu_init(nes_t *nes) {
+  // NES power up state
+  cpu_t *cpu = nes->cpu;
+
+  bzero(cpu, sizeof *cpu);
+  cpu->a = 0;
+  cpu->x = 0;
+  cpu->y = 0;
+  cpu->ticks = 4;
+  cpu->p = 0x24;
+  cpu->sp = 0xFD;
+  cpu->nmi = false;
+
+  // Initialize lookup tables
+  cpu_init_tables();
+
+  // Set PC to value at reset vector
+//  cpu->pc = cpu_read16(nes, VEC_RESET);
+  // TODO: This is just for nestest
+  cpu->pc = 0xC000;
+  cpu->fetch_op = true;
 }
 
-// TODO: This function mysteriously breaks things, I think it has something to do with the
-// TODO: cpu_read8 calls that have side effects when used on PPU reg, OAM DMA, controller reg etc
-void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
+void cpu_destroy(nes_t *nes) {
+  bzero(nes->cpu, sizeof *nes->cpu);
+}
+
+static void cpu_log_op(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
   u8 num_operands, low, high;
-  u16 addr;
   cpu_t *cpu;
 
   cpu = nes->cpu;
@@ -855,7 +343,7 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
       fprintf(log_f, "%02X %02X %02X ", opcode, low, high);
       break;
     default:
-      printf("dump_cpu: invalid operand count, wtf?\n");
+      printf("cpu_log_op: invalid operand count, wtf?\n");
       exit(EXIT_FAILURE);
   }
   fprintf(log_f, " %s", cpu_opcode_tos(opcode));
@@ -873,19 +361,16 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
       }
       break;
     case ABS_IND:
-      addr = resolve_addr(nes, operand, mode);
-      fprintf(log_f, " ($%04X) = %04X              ", operand, addr);
+      fprintf(log_f, " ($%04X) = %04X              ", operand, addr_bus);
       break;
     case ABS_IDX_X:
     case ABS_IDX_Y:
-      addr = resolve_addr(nes, operand, mode);
       fprintf(log_f, " $%04X,%s @ %04X = %02X         ", operand,
-              mode == ABS_IDX_X ? "X" : "Y", addr, cpu_read8(nes, addr));
+              mode == ABS_IDX_X ? "X" : "Y", addr_bus, cpu_read8(nes, addr_bus));
       break;
     case REL:
       // Add two because we haven't advanced the PC when this function is called
-      addr = resolve_addr(nes, operand, mode) + 2;
-      fprintf(log_f, " $%04X                       ", addr);
+      fprintf(log_f, " $%04X                       ", addr_bus);
       break;
     case IMM:
       fprintf(log_f, " #$%02X                        ", operand);
@@ -896,21 +381,18 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
       break;
     case ZP_IDX_X:
     case ZP_IDX_Y:
-      addr = resolve_addr(nes, operand, mode);
       fprintf(log_f, " $%02X,%s @ %02X = %02X             ", operand,
-              mode == ZP_IDX_X ? "X" : "Y", addr, cpu_read8(nes, addr));
+              mode == ZP_IDX_X ? "X" : "Y", addr_bus, cpu_read8(nes, addr_bus));
       break;
     case ZP_IDX_IND:
-      addr = resolve_addr(nes, operand, mode);
       fprintf(log_f, " ($%02X,X) @ %02X = %04X = %02X    ", operand,
-              (operand + cpu->x) & 0xFF, addr, cpu_read8(nes, addr));
+              (operand + cpu->x) & 0xFF, addr_bus, cpu_read8(nes, addr_bus));
       break;
     case ZP_IND_IDX_Y:
-      addr = resolve_addr(nes, operand, mode);
       low = cpu_read8(nes, operand);
       high = cpu_read8(nes, (operand + 1) & 0xFF);
       fprintf(log_f, " ($%02X),Y = %04X @ %04X = %02X  ", operand,
-              low | (high << 8), addr, cpu_read8(nes, addr));
+              low | (high << 8), addr_bus, cpu_read8(nes, addr_bus));
       break;
     case IMPL_ACCUM:
       // For some dumb reason, accumulator arithmetic instructions have "A" as
@@ -922,7 +404,7 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
         fprintf(log_f, "                             ");
       break;
     default:
-      printf("dump_cpu: invalid addressing mode, wtf?\n");
+      printf("cpu_log_op: invalid addressing mode, wtf?\n");
       exit(EXIT_FAILURE);
   }
 
@@ -933,11 +415,12 @@ void dump_cpu(nes_t *nes, u8 opcode, u16 operand, addrmode_t mode) {
           nes->ppu->dot, cpu->ticks);
 
   // Mark where interrupts occur
-  if (cpu->nmi_pending) {
+  if (cpu->nmi) {
     fprintf(log_f, " **** NMI occurred ****");
-  } else if (cpu->irq_pending) {
-    fprintf(log_f, " **** IRQ occurred ****");
   }
+//  else if (cpu->irq_pending) {
+//    fprintf(log_f, " **** IRQ occurred ****");
+//  }
 
   fprintf(log_f, "\n");
 }

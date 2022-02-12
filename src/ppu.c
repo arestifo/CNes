@@ -310,7 +310,7 @@ static void ppu_fill_sec_oam(ppu_t *ppu, u16 scanline) {
   }
 }
 
-// Renders a single pixel at the current PPU position
+// Emulates one PPU tick/cycle. Renders a single pixel at the current PPU position
 // Also controls timing and issues NMIs to the CPU on VBlank
 void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
   ppu_t *ppu = nes->ppu;
@@ -345,7 +345,7 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 1);
 
       if (GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_NMI_ENABLE_BIT))
-        nes->cpu->nmi_pending = true;
+        nes->cpu->nmi = true;
     }
   } else if (SCANLINE == PRERENDER_LINE) {
     // Pre-render scanline
@@ -519,7 +519,7 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
       break;
     default:
       printf("ppu_reg_write: cannot write to ppu reg $%02d\n", reg);
-      exit(EXIT_FAILURE);
+//      exit(EXIT_FAILURE);
   }
 }
 
@@ -534,6 +534,6 @@ void ppu_write(nes_t *nes, u16 addr, u8 val) {
 }
 
 void ppu_destroy(nes_t *nes) {
-  bzero(nes->cpu, sizeof *nes->cpu);
+  bzero(nes->ppu, sizeof *nes->ppu);
 }
 

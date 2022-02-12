@@ -39,7 +39,7 @@ void cart_init(cart_t *cart, char *cart_fn) {
 
   // The lower bound is 0x4000 because I am using the chr buffer directly as cartridge space + vram
   // TODO: This might not work at all and at the very least it's hacky
-  cart->chr = nes_malloc(CHR_SZ > 0x4000 ? CHR_SZ : 0x4000);
+  cart->chr = nes_malloc(MAX(CHR_SZ, 0x4000));
   nes_fread(cart->chr, INES_CHRROM_BLOCKSZ, cart->header.chrrom_n, cart_f);
 
   nes_fclose(cart_f);

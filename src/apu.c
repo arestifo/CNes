@@ -2,6 +2,9 @@
 #include "include/cpu.h"
 #include "include/util.h"
 
+static void apu_half_frame_tick(apu_t *apu);
+static void apu_quarter_frame_tick(apu_t *apu);
+
 const u8 LC_LENGTHS[32] = {0x0A, 0xFE, 0x14, 0x02, 0x28, 0x04, 0x50, 0x06, 0xA0, 0x08, 0x3C, 0x0A,
                            0x0E, 0x0C, 0x1A, 0x0E, 0x0C, 0x10, 0x18, 0x12, 0x30, 0x14, 0x60, 0x16,
                            0xC0, 0x18, 0x48, 0x1A, 0x10, 0x1C, 0x20, 0x1E};
@@ -209,6 +212,10 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
       apu->frame_counter.irq_disable = val >> 6 & 1;
 
       // Reset divider and and sequencer on every $4017 write
+      if (val & 0x80) {
+        apu_half_frame_tick(apu);
+        apu_quarter_frame_tick(apu);
+      }
       apu->frame_counter.step = 0;
       apu->frame_counter.divider = 0;
       break;
@@ -340,8 +347,8 @@ static void apu_render_audio(apu_t *apu) {
 //      printf("apu_render_audio: p1_out=%d p2_out=%d t_out=%d n_out=%d d_out=%d\n",
 //             pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
 //    } else { debug++; }
-//    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-    i16 final_sample = apu_mix_audio(0, 0, 0, noise_out, dmc_out);
+    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+//    i16 final_sample = apu_mix_audio(0, 0, 0, noise_out, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -363,8 +370,8 @@ static void apu_quarter_frame_tick(apu_t *apu) {
   apu_clock_envelope(&apu->pulse2.env);
   apu_clock_envelope(&apu->noise.env);
 
-  // *********** Render and queue some audio ***********
-  apu_render_audio(apu);
+//  // *********** Render and queue some audio ***********
+//  apu_render_audio(apu);
 }
 
 static void apu_half_frame_tick(apu_t *apu) {
@@ -399,8 +406,6 @@ void apu_tick(nes_t *nes) {
       // Trigger CPU frame IRQ
       if (apu->frame_counter.step == 3 && !apu->frame_counter.irq_disable) {
         apu->frame_interrupt = true;
-        // TODO: Fix IRQ :(
-//      nes->cpu->irq_pending = true;
       }
 
       // Trigger half-frame ticks on every odd sequence step
@@ -408,6 +413,7 @@ void apu_tick(nes_t *nes) {
         apu_half_frame_tick(apu);
 
       apu_quarter_frame_tick(apu);
+      apu_render_audio(apu);
     } else {
       // *********** 5-step sequence mode ***********
       // Sequence = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4, ...]
@@ -417,6 +423,7 @@ void apu_tick(nes_t *nes) {
           apu_half_frame_tick(apu);
 
         apu_quarter_frame_tick(apu);
+        apu_render_audio(apu);
       }
     }
 

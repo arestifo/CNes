@@ -73,6 +73,11 @@ i32 twos_complement(i32 num) {
   return -num;
 }
 
+void crash_and_burn(const char *msg) {
+  printf("%s\n", msg);
+  exit(EXIT_FAILURE);
+}
+
 // Gets assembler mnemonic from opcode
 char *cpu_opcode_tos(u8 opcode) {
   switch (opcode) {

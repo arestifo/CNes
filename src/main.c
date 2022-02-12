@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
 
   // Read command line arguments
   if (argc != 2) {
-    printf("%s: invalid command line arguments.\n", argv[0]);
+    printf("Invalid command line arguments.\n", argv[0]);
     exit(EXIT_FAILURE);
   }
 
