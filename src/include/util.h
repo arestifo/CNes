@@ -8,11 +8,11 @@
 #define GET_BIT(num, n) (!!((num) & (1 << (n))))
 
 // Get upper and lower bytes of a u16
-#define GET_BYTE_LO(src) ((sr) & 0xFF)
+#define GET_BYTE_LO(src) ((src) & 0xFF)
 #define GET_BYTE_HI(src) (((src) & 0xFF00) >> 8)
 
 #define SET_BYTE_LO(dest, byte) ((dest) = (((dest) & ~0xFF) | (byte)))
-#define SET_BYTE_HI(dest, byte) ((dest) = (((dest) & ~0xFF00) | (byte << 8)))
+#define SET_BYTE_HI(dest, byte) ((dest) = (((dest) & ~0xFF00) | ((byte) << 8)))
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
