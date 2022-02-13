@@ -15,8 +15,9 @@ static void cpu_log_op(nes_t *nes);
 // This function is run immediately after getting the opcode and puts the effective operand/address
 // into operand
 static bool cpu_get_operand_tick(nes_t *nes, u16 *operand);
-static bool cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag);
-
+static void cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag);
+static void cpu_pull_reg_op(nes_t *nes, bool reg_a);
+static void cpu_push_reg_op(nes_t *nes, bool reg_a);
 // *********************************************************************
 
 // Thanks to https://www.nesdev.org/6502_cpu.txt for great NES 6502 documentation
@@ -50,31 +51,42 @@ OP_FUNC oASL(nes_t *nes) {
 }
 
 OP_FUNC oBCC(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_do_branch_op(nes, C_FLAG, 0);
 }
 
 OP_FUNC oBCS(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_do_branch_op(nes, C_FLAG, 1);
 }
 
 OP_FUNC oBEQ(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_do_branch_op(nes, Z_FLAG, 1);
 }
 
 OP_FUNC oBIT(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_t *cpu = nes->cpu;
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    u8 val = cpu_read8(nes, addr);
+    SET_BIT(cpu->p, Z_FLAG, (cpu->a & val) == 0);
+
+    // Overflow flag is set to bit 6 of memory value
+    // Negative flag is set to bit 7 of memory value
+    SET_BIT(cpu->p, V_FLAG, GET_BIT(val, 6));
+    SET_BIT(cpu->p, N_FLAG, GET_BIT(val, 7));
+    cpu->fetch_op = true;
+  }
 }
 
 OP_FUNC oBMI(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_do_branch_op(nes, N_FLAG, 1);
 }
 
 OP_FUNC oBNE(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_do_branch_op(nes, Z_FLAG, 0);
 }
 
 OP_FUNC oBPL(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_do_branch_op(nes, N_FLAG, 0);
 }
 
 OP_FUNC oBRK(nes_t *nes) {
@@ -82,31 +94,31 @@ OP_FUNC oBRK(nes_t *nes) {
 }
 
 OP_FUNC oBVC(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_do_branch_op(nes, V_FLAG, 0);
 }
 
 OP_FUNC oBVS(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_do_branch_op(nes, V_FLAG, 1);
 }
 
 OP_FUNC oCLC(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   SET_BIT(nes->cpu->p, C_FLAG, 0);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oCLD(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   SET_BIT(nes->cpu->p, D_FLAG, 0);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oCLI(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   SET_BIT(nes->cpu->p, I_FLAG, 0);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oCLV(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   SET_BIT(nes->cpu->p, V_FLAG, 0);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oCMP(nes_t *nes) {
@@ -142,9 +154,9 @@ OP_FUNC oINC(nes_t *nes) {
 }
 
 OP_FUNC oINX(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   nes->cpu->x++;
   cpu_set_nz(nes, nes->cpu->x);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oINY(nes_t *nes) {
@@ -264,19 +276,19 @@ OP_FUNC oORA(nes_t *nes) {
 }
 
 OP_FUNC oPHA(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_push_reg_op(nes, true);
 }
 
 OP_FUNC oPHP(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_push_reg_op(nes, false);
 }
 
 OP_FUNC oPLA(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_pull_reg_op(nes, true);
 }
 
 OP_FUNC oPLP(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_pull_reg_op(nes, false);
 }
 
 OP_FUNC oROL(nes_t *nes) {
@@ -292,7 +304,28 @@ OP_FUNC oRTI(nes_t *nes) {
 }
 
 OP_FUNC oRTS(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_t *cpu = nes->cpu;
+  switch (cpu->op.cyc) {
+    case 0:
+      // Dummy read next instruction byte;
+      cpu_read8(nes, cpu->pc);
+      break;
+    case 1:
+      // This cycle is supposed to pre-increment the stack pointer but that is all handled in
+      // cpu_pop8(), so just skip this cycle
+      break;
+    case 2:
+      SET_BYTE_LO(cpu->pc, cpu_pop8(nes));
+      break;
+    case 3:
+      SET_BYTE_HI(cpu->pc, cpu_pop8(nes));
+      break;
+    case 4:
+      cpu->pc++;
+      cpu->fetch_op = true;
+      break;
+  }
+  cpu->op.cyc++;
 }
 
 OP_FUNC oSBC(nes_t *nes) {
@@ -300,77 +333,78 @@ OP_FUNC oSBC(nes_t *nes) {
 }
 
 OP_FUNC oSEC(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   SET_BIT(nes->cpu->p, C_FLAG, 1);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oSED(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   SET_BIT(nes->cpu->p, D_FLAG, 1);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oSEI(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   SET_BIT(nes->cpu->p, I_FLAG, 1);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oSTA(nes_t *nes) {
   u16 addr;
   if (cpu_get_operand_tick(nes, &addr)) {
-    nes->cpu->fetch_op = true;
+//    printf("oSTA: pc=$%04X addr=$%04X a=$%02X addrmode=%d\n", nes->cpu->pc, addr, nes->cpu->a, nes->cpu->op.mode);
     cpu_write8(nes, addr, nes->cpu->a);
+    nes->cpu->fetch_op = true;
   }
 }
 
 OP_FUNC oSTX(nes_t *nes) {
   u16 addr;
   if (cpu_get_operand_tick(nes, &addr)) {
-    nes->cpu->fetch_op = true;
     cpu_write8(nes, addr, nes->cpu->x);
+    nes->cpu->fetch_op = true;
   }
 }
 
 OP_FUNC oSTY(nes_t *nes) {
   u16 addr;
   if (cpu_get_operand_tick(nes, &addr)) {
-    nes->cpu->fetch_op = true;
     cpu_write8(nes, addr, nes->cpu->y);
+    nes->cpu->fetch_op = true;
   }
 }
 
 OP_FUNC oTAX(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   nes->cpu->x = nes->cpu->a;
   cpu_set_nz(nes, nes->cpu->x);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oTAY(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   nes->cpu->y = nes->cpu->a;
   cpu_set_nz(nes, nes->cpu->y);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oTSX(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   nes->cpu->x = nes->cpu->sp;
   cpu_set_nz(nes, nes->cpu->x);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oTXA(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   nes->cpu->a = nes->cpu->x;
   cpu_set_nz(nes, nes->cpu->a);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oTXS(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   nes->cpu->sp = nes->cpu->x;
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oTYA(nes_t *nes) {
-  nes->cpu->fetch_op = true;
   nes->cpu->a = nes->cpu->y;
   cpu_set_nz(nes, nes->cpu->a);
+  nes->cpu->fetch_op = true;
 }
 
 // TODO: Support unofficial opcodes (low priority)
@@ -396,7 +430,7 @@ void (*const cpu_op_fns[CPU_NUM_OPCODES])(nes_t *nes) = {
 };
 
 // Returns true when this branch op is done executing
-static bool cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
+static void cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
   cpu_t *cpu = nes->cpu;
   switch (cpu->op.cyc) {
     case 0:
@@ -407,21 +441,69 @@ static bool cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
       if (GET_BIT(cpu->p, flag_bit) == branch_if_flag) {
         cpu->op.do_branch = true;
         cpu->op.cyc++;
-        return false;
-      } else {
-        // If not branching, we're done. Fetch a new op
-        cpu->fetch_op = true;
-        return true;
+        break;
       }
+
+      // If not branching, we're done. Fetch a new op
+      cpu->fetch_op = true;
+      break;
     case 1: {
       // We're taking the branch, calculate the new PC. If it crosses a page boundary we need another
       // cycle to fix it
       u16 new_pc = cpu->pc + (i8) data_bus;
       if (PAGE_CROSSED(cpu->pc, new_pc)) {
-
+        cpu->op.penalty = true;
+        break;
       }
+
+      cpu->pc = new_pc;
+      cpu->fetch_op = true;
+      break;
     }
+    case 2:
+      // Page cross penalty
+      cpu->fetch_op = true;
+      break;
   }
+}
+
+// Execute PLA or PLP, if reg_a is true we do PLA else PLP
+static void cpu_pull_reg_op(nes_t *nes, bool reg_a) {
+  cpu_t *cpu = nes->cpu;
+  switch (cpu->op.cyc) {
+    case 0:
+      // Dummy read instruction byte
+      cpu_read8(nes, cpu->pc);
+      break;
+    case 1:
+      // Increment SP, already handled by cpu_pop8
+      break;
+    case 2:
+      if (reg_a) {
+        cpu->a = cpu_pop8(nes);
+        cpu_set_nz(nes, cpu->a);
+      } else {
+        cpu->p = cpu_pop8(nes);
+      }
+      cpu->fetch_op = true;
+      break;
+  }
+  cpu->op.cyc++;
+}
+
+static void cpu_push_reg_op(nes_t *nes, bool reg_a) {
+  cpu_t *cpu = nes->cpu;
+  switch (cpu->op.cyc) {
+    case 0:
+      // Dummy read instruction byte
+      cpu_read8(nes, cpu->pc);
+      break;
+    case 1:
+      cpu_push8(nes, reg_a ? cpu->a : cpu->p);
+      cpu->fetch_op = true;
+      break;
+  }
+  cpu->op.cyc++;
 }
 
 static void cpu_set_op(cpu_t *cpu, u8 opcode) {
@@ -464,7 +546,7 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
       // Clear upper address line bits for zero-page indexing
       assert(cpu->op.cyc == 0 || cpu->op.cyc == 1);
       if (cpu->op.cyc == 0) {
-        addr_bus = GET_BYTE_LO(cpu->pc++);
+        addr_bus = cpu_read8(nes, cpu->pc++);
         cpu->op.cyc++;
         return false;
       } else {
@@ -627,7 +709,7 @@ static void cpu_log_op(nes_t *nes) {
       break;
     case REL:
       // Add two because we haven't advanced the PC when this function is called
-      fprintf(log_f, " $%04X                       ", nes->cpu->pc + (i8) operand);
+      fprintf(log_f, " $%04X                       ", nes->cpu->pc + (i8) operand + 2);
       break;
     case IMM:
       fprintf(log_f, " #$%02X                        ", operand);
