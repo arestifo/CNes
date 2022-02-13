@@ -15,9 +15,11 @@ static void cpu_log_op(nes_t *nes);
 // This function is run immediately after getting the opcode and puts the effective operand/address
 // into operand
 static bool cpu_get_operand_tick(nes_t *nes, u16 *operand);
-static void cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag);
+static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag);
 static void cpu_pull_reg_op(nes_t *nes, bool reg_a);
 static void cpu_push_reg_op(nes_t *nes, bool reg_a);
+static void cpu_compare_op(nes_t *nes, u8 compare_val);
+
 // *********************************************************************
 
 // Thanks to https://www.nesdev.org/6502_cpu.txt for great NES 6502 documentation
@@ -43,7 +45,12 @@ OP_FUNC oADC(nes_t *nes) {
 }
 
 OP_FUNC oAND(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->a &= cpu_read8(nes, addr);
+    cpu_set_nz(nes, nes->cpu->a);
+    nes->cpu->fetch_op = true;
+  }
 }
 
 OP_FUNC oASL(nes_t *nes) {
@@ -51,15 +58,15 @@ OP_FUNC oASL(nes_t *nes) {
 }
 
 OP_FUNC oBCC(nes_t *nes) {
-  cpu_do_branch_op(nes, C_FLAG, 0);
+  cpu_branch_op(nes, C_FLAG, 0);
 }
 
 OP_FUNC oBCS(nes_t *nes) {
-  cpu_do_branch_op(nes, C_FLAG, 1);
+  cpu_branch_op(nes, C_FLAG, 1);
 }
 
 OP_FUNC oBEQ(nes_t *nes) {
-  cpu_do_branch_op(nes, Z_FLAG, 1);
+  cpu_branch_op(nes, Z_FLAG, 1);
 }
 
 OP_FUNC oBIT(nes_t *nes) {
@@ -78,15 +85,15 @@ OP_FUNC oBIT(nes_t *nes) {
 }
 
 OP_FUNC oBMI(nes_t *nes) {
-  cpu_do_branch_op(nes, N_FLAG, 1);
+  cpu_branch_op(nes, N_FLAG, 1);
 }
 
 OP_FUNC oBNE(nes_t *nes) {
-  cpu_do_branch_op(nes, Z_FLAG, 0);
+  cpu_branch_op(nes, Z_FLAG, 0);
 }
 
 OP_FUNC oBPL(nes_t *nes) {
-  cpu_do_branch_op(nes, N_FLAG, 0);
+  cpu_branch_op(nes, N_FLAG, 0);
 }
 
 OP_FUNC oBRK(nes_t *nes) {
@@ -94,11 +101,11 @@ OP_FUNC oBRK(nes_t *nes) {
 }
 
 OP_FUNC oBVC(nes_t *nes) {
-  cpu_do_branch_op(nes, V_FLAG, 0);
+  cpu_branch_op(nes, V_FLAG, 0);
 }
 
 OP_FUNC oBVS(nes_t *nes) {
-  cpu_do_branch_op(nes, V_FLAG, 1);
+  cpu_branch_op(nes, V_FLAG, 1);
 }
 
 OP_FUNC oCLC(nes_t *nes) {
@@ -122,15 +129,15 @@ OP_FUNC oCLV(nes_t *nes) {
 }
 
 OP_FUNC oCMP(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_compare_op(nes, nes->cpu->a);
 }
 
 OP_FUNC oCPX(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_compare_op(nes, nes->cpu->x);
 }
 
 OP_FUNC oCPY(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_compare_op(nes, nes->cpu->y);
 }
 
 OP_FUNC oDEC(nes_t *nes) {
@@ -146,7 +153,12 @@ OP_FUNC oDEY(nes_t *nes) {
 }
 
 OP_FUNC oEOR(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->a ^= cpu_read8(nes, addr);
+    cpu_set_nz(nes, nes->cpu->a);
+    nes->cpu->fetch_op = true;
+  }
 }
 
 OP_FUNC oINC(nes_t *nes) {
@@ -160,7 +172,9 @@ OP_FUNC oINX(nes_t *nes) {
 }
 
 OP_FUNC oINY(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->y++;
+  cpu_set_nz(nes, nes->cpu->y);
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oJMP(nes_t *nes) {
@@ -272,7 +286,12 @@ OP_FUNC oNOP(nes_t *nes) {
 }
 
 OP_FUNC oORA(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    nes->cpu->a |= cpu_read8(nes, addr);
+    cpu_set_nz(nes, nes->cpu->a);
+    nes->cpu->fetch_op = true;
+  }
 }
 
 OP_FUNC oPHA(nes_t *nes) {
@@ -430,7 +449,7 @@ void (*const cpu_op_fns[CPU_NUM_OPCODES])(nes_t *nes) = {
 };
 
 // Returns true when this branch op is done executing
-static void cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
+static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
   cpu_t *cpu = nes->cpu;
   switch (cpu->op.cyc) {
     case 0:
@@ -483,7 +502,7 @@ static void cpu_pull_reg_op(nes_t *nes, bool reg_a) {
         cpu->a = cpu_pop8(nes);
         cpu_set_nz(nes, cpu->a);
       } else {
-        cpu->p = cpu_pop8(nes);
+        cpu->p = (cpu_pop8(nes) | U_MASK) & ~B_MASK;
       }
       cpu->fetch_op = true;
       break;
@@ -499,11 +518,22 @@ static void cpu_push_reg_op(nes_t *nes, bool reg_a) {
       cpu_read8(nes, cpu->pc);
       break;
     case 1:
-      cpu_push8(nes, reg_a ? cpu->a : cpu->p);
+      cpu_push8(nes, reg_a ? cpu->a : (cpu->p | B_MASK));
       cpu->fetch_op = true;
       break;
   }
   cpu->op.cyc++;
+}
+
+static void cpu_compare_op(nes_t *nes, u8 val1) {
+  cpu_t *cpu = nes->cpu;
+  u16 addr;
+  if (cpu_get_operand_tick(nes, &addr)) {
+    u8 val2 = cpu_read8(nes, addr);
+    SET_BIT(cpu->p, C_FLAG, val1 >= val2);
+    cpu_set_nz(nes, val1 - val2);
+    cpu->fetch_op = true;
+  }
 }
 
 static void cpu_set_op(cpu_t *cpu, u8 opcode) {
@@ -742,9 +772,6 @@ static void cpu_log_op(nes_t *nes) {
       else
         fprintf(log_f, "                             ");
       break;
-    default:
-      printf("cpu_log_op: invalid addressing mode, wtf?\n");
-      exit(EXIT_FAILURE);
   }
 
   // Print registers
