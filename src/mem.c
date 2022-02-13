@@ -73,7 +73,7 @@ u16 cpu_read16(nes_t *nes, u16 addr) {
 }
 
 void cpu_push8(nes_t *nes, u8 val) {
-  printf("cpu_push8: push pc=$%04X val=$%02X base=$%04X\n", nes->cpu->pc, val, STACK_BASE + nes->cpu->sp);
+//  printf("cpu_push8: push pc=$%04X val=$%02X base=$%04X\n", nes->cpu->pc, val, STACK_BASE + nes->cpu->sp);
   cpu_write8(nes, STACK_BASE + nes->cpu->sp--, val);
 }
 

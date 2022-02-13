@@ -121,7 +121,7 @@ char *cpu_opcode_tos(u8 opcode) {
     case 0x10:
       return "BPL";
     case 0x00:
-      return "INTR_BRK";
+      return "BRK";
     case 0x50:
       return "BVC";
     case 0x70:

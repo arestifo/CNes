@@ -43,7 +43,7 @@
 // There are four addressing modes that can incur page cross penalties:
 // Absolute,X, Absolute,Y, (Indirect),Y, and Relative
 // All instructions using these addressing modes incur page cross penalties
-// UNLESS they do a write e.g. ASL, LSR, ROL, ROR, STA, INC, DEC
+// UNLESS they do a write e.g. OP_ASL, OP_LSR, OP_ROL, OP_ROR, STA, OP_INC, OP_DEC
 #define PAGE_CROSSED(a, b) (((a) & 0x0100) != ((b) & 0x0100))
 
 // Memory addressing modes
@@ -82,6 +82,7 @@ typedef struct cpu_op {
   // Did we incur a page cross penalty?
   bool penalty;
   bool do_branch;
+  bool rmw_did_read;
 } cpu_op_t;
 
 // The NES uses a MOS Technology 6502 CPU with minimal modifications
@@ -113,6 +114,11 @@ typedef enum interrupt {
   INTR_IRQ,  // Standard interrupt
   INTR_BRK   // Software-triggered (BRK) interrupt
 } interrupt_t;
+
+// Read-modify-write instructions are handled slightly differently
+typedef enum rmw_op_type {
+  OP_ASL, OP_LSR, OP_ROL, OP_ROR, OP_INC, OP_DEC
+} rmw_op_type_t;
 
 // Uploads a page of CPU memory to PPU OAM. Suspends the CPU while the transfer is taking place
 // TODO: Implement this in a cycle-accurate manner
