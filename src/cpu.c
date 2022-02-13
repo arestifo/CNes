@@ -7,12 +7,17 @@
 
 #define OP_FUNC static inline void
 
-// ************Internal CPU functions forward declarations ************
+// TODO: This whole file needs a refactor. I hate seeing nes-> everywhere, plus it makes the code less readable
+
+// ************ Internal CPU functions forward declarations ************
 static void cpu_log_op(nes_t *nes);
 
 // This function is run immediately after getting the opcode and puts the effective operand/address
 // into operand
 static bool cpu_get_operand_tick(nes_t *nes, u16 *operand);
+static bool cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag);
+
+// *********************************************************************
 
 // Thanks to https://www.nesdev.org/6502_cpu.txt for great NES 6502 documentation
 // This is just here for logging purposes
@@ -26,9 +31,9 @@ u8 data_bus = 0;
 // Addressing mode indexed by opcode
 addrmode_t cpu_op_addrmodes[CPU_NUM_OPCODES];
 
-static void cpu_set_nz(nes_t *nes, u8 result) {
-  SET_BIT(nes->cpu->p, N_BIT, (result & 0x80) >> 7);
-  SET_BIT(nes->cpu->p, Z_BIT, !result);
+OP_FUNC cpu_set_nz(nes_t *nes, u8 result) {
+  SET_BIT(nes->cpu->p, N_FLAG, (result & 0x80) >> 7);
+  SET_BIT(nes->cpu->p, Z_FLAG, !result);
 }
 
 // Function pointers to CPU instruction handlers
@@ -85,19 +90,23 @@ OP_FUNC oBVS(nes_t *nes) {
 }
 
 OP_FUNC oCLC(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  SET_BIT(nes->cpu->p, C_FLAG, 0);
 }
 
 OP_FUNC oCLD(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  SET_BIT(nes->cpu->p, D_FLAG, 0);
 }
 
 OP_FUNC oCLI(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  SET_BIT(nes->cpu->p, I_FLAG, 0);
 }
 
 OP_FUNC oCLV(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  SET_BIT(nes->cpu->p, V_FLAG, 0);
 }
 
 OP_FUNC oCMP(nes_t *nes) {
@@ -133,7 +142,9 @@ OP_FUNC oINC(nes_t *nes) {
 }
 
 OP_FUNC oINX(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  nes->cpu->x++;
+  cpu_set_nz(nes, nes->cpu->x);
 }
 
 OP_FUNC oINY(nes_t *nes) {
@@ -185,7 +196,32 @@ OP_FUNC oJMP(nes_t *nes) {
 }
 
 OP_FUNC oJSR(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  cpu_t *cpu = nes->cpu;
+  switch (cpu->op.cyc) {
+    case 0:
+      // Fetch low absolute addr to address bus
+      addr_bus = cpu_read8(nes, cpu->pc++);
+      break;
+    case 1:
+      // I am not sure what this cycle does. Some docs (https://www.nesdev.org/6502_cpu.txt) says it predecrements
+      // the stack pointer but this causes wrong results, so just skip it
+      break;
+    case 2:
+      cpu_push8(nes, GET_BYTE_HI(cpu->pc));
+      break;
+    case 3:
+      cpu_push8(nes, GET_BYTE_LO(cpu->pc));
+      break;
+    case 4:
+      // Fetch high absolute addr to PCH and copy low address bus byte to PCL
+      SET_BYTE_HI(cpu->pc, cpu_read8(nes, cpu->pc));
+      SET_BYTE_LO(cpu->pc, GET_BYTE_LO(addr_bus));
+      cpu->fetch_op = true;
+      break;
+    default:
+      crash_and_burn("oJSR: wtf?");
+  }
+  cpu->op.cyc++;
 }
 
 OP_FUNC oLDA(nes_t *nes) {
@@ -220,7 +256,7 @@ OP_FUNC oLSR(nes_t *nes) {
 }
 
 OP_FUNC oNOP(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oORA(nes_t *nes) {
@@ -264,15 +300,18 @@ OP_FUNC oSBC(nes_t *nes) {
 }
 
 OP_FUNC oSEC(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  SET_BIT(nes->cpu->p, C_FLAG, 1);
 }
 
 OP_FUNC oSED(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  SET_BIT(nes->cpu->p, D_FLAG, 1);
 }
 
 OP_FUNC oSEI(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  SET_BIT(nes->cpu->p, I_FLAG, 1);
 }
 
 OP_FUNC oSTA(nes_t *nes) {
@@ -300,27 +339,38 @@ OP_FUNC oSTY(nes_t *nes) {
 }
 
 OP_FUNC oTAX(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  nes->cpu->x = nes->cpu->a;
+  cpu_set_nz(nes, nes->cpu->x);
 }
 
 OP_FUNC oTAY(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  nes->cpu->y = nes->cpu->a;
+  cpu_set_nz(nes, nes->cpu->y);
 }
 
 OP_FUNC oTSX(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  nes->cpu->x = nes->cpu->sp;
+  cpu_set_nz(nes, nes->cpu->x);
 }
 
 OP_FUNC oTXA(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  nes->cpu->a = nes->cpu->x;
+  cpu_set_nz(nes, nes->cpu->a);
 }
 
 OP_FUNC oTXS(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  nes->cpu->sp = nes->cpu->x;
 }
 
 OP_FUNC oTYA(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->fetch_op = true;
+  nes->cpu->a = nes->cpu->y;
+  cpu_set_nz(nes, nes->cpu->a);
 }
 
 // TODO: Support unofficial opcodes (low priority)
@@ -345,10 +395,41 @@ void (*const cpu_op_fns[CPU_NUM_OPCODES])(nes_t *nes) = {
     oBEQ, oSBC, NULL, NULL, NULL, oSBC, oINC, NULL, oSED, oSBC, NULL, NULL, NULL, oSBC, oINC, NULL
 };
 
+// Returns true when this branch op is done executing
+static bool cpu_do_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
+  cpu_t *cpu = nes->cpu;
+  switch (cpu->op.cyc) {
+    case 0:
+      // Fetch operand
+      data_bus = cpu_read8(nes, cpu->pc++);
+
+      // Are we taking the branch?
+      if (GET_BIT(cpu->p, flag_bit) == branch_if_flag) {
+        cpu->op.do_branch = true;
+        cpu->op.cyc++;
+        return false;
+      } else {
+        // If not branching, we're done. Fetch a new op
+        cpu->fetch_op = true;
+        return true;
+      }
+    case 1: {
+      // We're taking the branch, calculate the new PC. If it crosses a page boundary we need another
+      // cycle to fix it
+      u16 new_pc = cpu->pc + (i8) data_bus;
+      if (PAGE_CROSSED(cpu->pc, new_pc)) {
+
+      }
+    }
+  }
+}
+
 static void cpu_set_op(cpu_t *cpu, u8 opcode) {
   cpu->op.code = opcode;
   cpu->op.mode = cpu_op_addrmodes[opcode];
   cpu->op.handler = cpu_op_fns[opcode];
+  cpu->op.penalty = false;
+  cpu->op.do_branch = false;
   cpu->op.cyc = 0;
 }
 
@@ -376,13 +457,20 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
       crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ABS_IDX_X");
     case ABS_IDX_Y:
       crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ABS_IDX_Y");
-    case REL:
-      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode REL");
     case IMM:
       *operand = cpu->pc++;
       return true;
     case ZP:
-      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP");
+      // Clear upper address line bits for zero-page indexing
+      assert(cpu->op.cyc == 0 || cpu->op.cyc == 1);
+      if (cpu->op.cyc == 0) {
+        addr_bus = GET_BYTE_LO(cpu->pc++);
+        cpu->op.cyc++;
+        return false;
+      } else {
+        *operand = addr_bus;
+        return true;
+      }
     case ZP_IDX_X:
       crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IDX_X");
     case ZP_IDX_Y:
@@ -392,8 +480,8 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
     case ZP_IND_IDX_Y:
       crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IND_IDX_Y");
     case IMPL_ACCUM:
-      // Read data byte and throw it away
-      cpu_read8(nes, cpu->pc++);
+      // Read next instruction byte and throw it away
+      cpu_read8(nes, cpu->pc);
       return true;
     default:
       crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode");
@@ -539,7 +627,7 @@ static void cpu_log_op(nes_t *nes) {
       break;
     case REL:
       // Add two because we haven't advanced the PC when this function is called
-      fprintf(log_f, " $%04X                       ", addr_bus);
+      fprintf(log_f, " $%04X                       ", nes->cpu->pc + (i8) operand);
       break;
     case IMM:
       fprintf(log_f, " #$%02X                        ", operand);

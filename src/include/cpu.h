@@ -8,14 +8,14 @@
 // Clear: cpu->p &= ~C_MASK
 // Test:  if (cpu->p & C_MASK)
 
-#define C_BIT 0
-#define Z_BIT 1
-#define I_BIT 2
-#define D_BIT 3
-#define B_BIT 4
-#define U_BIT 5
-#define V_BIT 6
-#define N_BIT 7
+#define C_FLAG 0
+#define Z_FLAG 1
+#define I_FLAG 2
+#define D_FLAG 3
+#define B_FLAG 4
+#define U_FLAG 5
+#define V_FLAG 6
+#define N_FLAG 7
 
 #define C_MASK 0x01
 #define Z_MASK 0x02
@@ -78,6 +78,10 @@ typedef struct cpu_op {
   // This is the number of ticks we have spent processing the current opcode *NOT INCLUDING* the original opcode fetch
   // cycle.
   u8 cyc;
+
+  // Did we incur a page cross penalty?
+  bool penalty;
+  bool do_branch;
 } cpu_op_t;
 
 // The NES uses a MOS Technology 6502 CPU with minimal modifications
@@ -93,9 +97,6 @@ typedef struct cpu {
 
   // Interrupt flags
   bool nmi;
-
-  // All instructions take more than one cycle. What intra-cycle instruction are we on? (0-indexed)
-  u8 subcyc;
 
   // How many CPU cycles have passed since initialization
   u64 ticks;
@@ -113,10 +114,8 @@ typedef enum interrupt {
   INTR_BRK   // Software-triggered (BRK) interrupt
 } interrupt_t;
 
-// Gets addressing mode from opcode.
-// TODO: Use this function to generate a lookup table at program start instead
-// TODO: of calling this function every instruction decode cycle
-
+// Uploads a page of CPU memory to PPU OAM. Suspends the CPU while the transfer is taking place
+// TODO: Implement this in a cycle-accurate manner
 void cpu_oam_dma(nes_t *nes, u16 cpu_base_addr);
 
 void cpu_init(nes_t *nes);

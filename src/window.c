@@ -35,11 +35,11 @@ void window_update(window_t *wnd, nes_t *nes) {
   // Grab rendering surface
   SDL_LockTexture(wnd->texture, NULL, (void **) &pixels, &pitch);
   while (!wnd->frame_ready) {
-    cpu_tick(nes);
-
     // 3 PPU ticks per CPU cycle
     while (nes->ppu->ticks < nes->cpu->ticks * 3)
       ppu_tick(nes, wnd, pixels);
+
+    cpu_tick(nes);
 
     // 2 APU ticks per CPU cycle, but we run the APU at the same rate as the CPU  to increase accuracy.
     // (The number of CPU ticks per frame sequencer clock is a nice round number (7457), while the number of APU ticks
