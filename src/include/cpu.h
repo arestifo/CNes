@@ -8,33 +8,33 @@
 // Clear: cpu->p &= ~C_MASK
 // Test:  if (cpu->p & C_MASK)
 
-#define C_FLAG 0
-#define Z_FLAG 1
-#define I_FLAG 2
-#define D_FLAG 3
-#define B_FLAG 4
-#define U_FLAG 5
-#define V_FLAG 6
-#define N_FLAG 7
+#define C_FLAG           0
+#define Z_FLAG           1
+#define I_FLAG           2
+#define D_FLAG           3
+#define B_FLAG           4
+#define U_FLAG           5
+#define V_FLAG           6
+#define N_FLAG           7
 
-#define C_MASK 0x01
-#define Z_MASK 0x02
-#define I_MASK 0x04
-#define D_MASK 0x08
-#define B_MASK 0x10
-#define U_MASK 0x20
-#define V_MASK 0x40
-#define N_MASK 0x80
+#define C_MASK           0x01
+#define Z_MASK           0x02
+#define I_MASK           0x04
+#define D_MASK           0x08
+#define B_MASK           0x10
+#define U_MASK           0x20
+#define V_MASK           0x40
+#define N_MASK           0x80
 
-#define VEC_NMI    0xFFFA
-#define VEC_RESET  0xFFFC
-#define VEC_IRQ    0xFFFE
-#define STACK_BASE 0x0100
+#define VEC_NMI          0xFFFA
+#define VEC_RESET        0xFFFC
+#define VEC_IRQ          0xFFFE
+#define STACK_BASE       0x0100
 
 // TODO: Put this in the mapper functions
-#define CPU_MEM_SZ 0x0800
+#define CPU_MEM_SZ       0x0800
 
-#define CPU_NUM_OPCODES 0x100
+#define CPU_NUM_OPCODES  0x100
 
 #define OAM_DMA_ADDR     0x4014
 #define CONTROLLER1_PORT 0x4016
@@ -43,7 +43,7 @@
 // There are four addressing modes that can incur page cross penalties:
 // Absolute,X, Absolute,Y, (Indirect),Y, and Relative
 // All instructions using these addressing modes incur page cross penalties
-// UNLESS they do a write e.g. OP_ASL, OP_LSR, OP_ROL, OP_ROR, STA, OP_INC, OP_DEC
+// UNLESS they do a write e.g. ASL, LSR, ROL, ROR, STA, INC, DEC
 #define PAGE_CROSSED(a, b) (((a) & 0x0100) != ((b) & 0x0100))
 
 // Memory addressing modes
@@ -79,10 +79,11 @@ typedef struct cpu_op {
   // cycle.
   u8 cyc;
 
+  // Set when the read phase of a RMW instruction finishes
+  bool rmw_did_read;
+
   // Did we incur a page cross penalty?
   bool penalty;
-  bool do_branch;
-  bool rmw_did_read;
 } cpu_op_t;
 
 // The NES uses a MOS Technology 6502 CPU with minimal modifications

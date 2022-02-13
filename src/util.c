@@ -289,7 +289,7 @@ char *cpu_opcode_tos(u8 opcode) {
     case 0x98:
       return "TYA";
     default:
-      printf("cpu_opcode_tos: unknown opcode 0x%02X\n", opcode);
+      printf("cpu_opcode_tos: unknown opcode $%02X\n", opcode);
       return "UNK";
   }
 }

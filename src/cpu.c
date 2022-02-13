@@ -13,7 +13,7 @@ static void cpu_log_op(nes_t *nes);
 
 // This function is run immediately after getting the opcode and puts the effective operand/address
 // into operand
-static bool cpu_get_operand_tick(nes_t *nes, u16 *operand);
+static bool cpu_get_operand_tick(nes_t *nes, u16 *operand, bool is_read_op);
 static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag);
 static void cpu_pull_reg_op(nes_t *nes, bool reg_a);
 static void cpu_push_reg_op(nes_t *nes, bool reg_a);
@@ -45,7 +45,7 @@ OP_FUNC oADC(nes_t *nes) {
 
 OP_FUNC oAND(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, true)) {
     nes->cpu->a &= cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->a);
     nes->cpu->fetch_op = true;
@@ -71,7 +71,7 @@ OP_FUNC oBEQ(nes_t *nes) {
 OP_FUNC oBIT(nes_t *nes) {
   cpu_t *cpu = nes->cpu;
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, false)) {
     u8 val = cpu_read8(nes, addr);
     SET_BIT(cpu->p, Z_FLAG, (cpu->a & val) == 0);
 
@@ -157,7 +157,7 @@ OP_FUNC oDEY(nes_t *nes) {
 
 OP_FUNC oEOR(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, true)) {
     nes->cpu->a ^= cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->a);
     nes->cpu->fetch_op = true;
@@ -255,7 +255,11 @@ OP_FUNC oJSR(nes_t *nes) {
 
 OP_FUNC oLDA(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, true)) {
+    if (nes->cpu->op.mode == ABS_IDX_Y) {
+//      printf("oLDA: pc=$%04X addr=$%04X *addr=$%02X a=$%02X addrmode=%d\n", nes->cpu->pc, addr, cpu_read8(nes, addr),
+//             nes->cpu->a, nes->cpu->op.mode);
+    }
     nes->cpu->fetch_op = true;
     nes->cpu->a = cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->a);
@@ -264,7 +268,7 @@ OP_FUNC oLDA(nes_t *nes) {
 
 OP_FUNC oLDX(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, true)) {
     nes->cpu->fetch_op = true;
     nes->cpu->x = cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->x);
@@ -273,7 +277,7 @@ OP_FUNC oLDX(nes_t *nes) {
 
 OP_FUNC oLDY(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, true)) {
     nes->cpu->fetch_op = true;
     nes->cpu->y = cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->y);
@@ -290,7 +294,7 @@ OP_FUNC oNOP(nes_t *nes) {
 
 OP_FUNC oORA(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, true)) {
     nes->cpu->a |= cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->a);
     nes->cpu->fetch_op = true;
@@ -390,7 +394,7 @@ OP_FUNC oSEI(nes_t *nes) {
 
 OP_FUNC oSTA(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, false)) {
     cpu_write8(nes, addr, nes->cpu->a);
     nes->cpu->fetch_op = true;
   }
@@ -398,8 +402,7 @@ OP_FUNC oSTA(nes_t *nes) {
 
 OP_FUNC oSTX(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
-//    printf("oSTX: pc=$%04X addr=$%04X a=$%02X addrmode=%d\n", nes->cpu->pc, addr, nes->cpu->a, nes->cpu->op.mode);
+  if (cpu_get_operand_tick(nes, &addr, false)) {
     cpu_write8(nes, addr, nes->cpu->x);
     nes->cpu->fetch_op = true;
   }
@@ -407,7 +410,7 @@ OP_FUNC oSTX(nes_t *nes) {
 
 OP_FUNC oSTY(nes_t *nes) {
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, false)) {
     cpu_write8(nes, addr, nes->cpu->y);
     nes->cpu->fetch_op = true;
   }
@@ -451,7 +454,7 @@ OP_FUNC oTYA(nes_t *nes) {
 // TODO: Support unofficial opcodes (low priority)
 // Maps opcodes to functions that handle them
 // I'm putting this here because I don't want to forward declare all the op functions :)
-void (*const cpu_op_fns[CPU_NUM_OPCODES])(nes_t *nes) = {
+void (*const cpu_op_handlers[CPU_NUM_OPCODES])(nes_t *nes) = {
     oBRK, oORA, NULL, NULL, NULL, oORA, oASL, NULL, oPHP, oORA, oASL, NULL, NULL, oORA, oASL, NULL,
     oBPL, oORA, NULL, NULL, NULL, oORA, oASL, NULL, oCLC, oORA, NULL, NULL, NULL, oORA, oASL, NULL,
     oJSR, oAND, NULL, NULL, oBIT, oAND, oROL, NULL, oPLP, oAND, oROL, NULL, oBIT, oAND, oROL, NULL,
@@ -480,7 +483,6 @@ static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
 
       // Are we taking the branch?
       if (GET_BIT(cpu->p, flag_bit) == branch_if_flag) {
-        cpu->op.do_branch = true;
         cpu->op.cyc++;
         break;
       }
@@ -493,7 +495,6 @@ static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
       // cycle to fix it
       u16 new_pc = cpu->pc + (i8) data_bus;
       if (PAGE_CROSSED(cpu->pc, new_pc)) {
-        cpu->op.penalty = true;
         break;
       }
 
@@ -550,7 +551,9 @@ static void cpu_push_reg_op(nes_t *nes, bool reg_a) {
 static void cpu_compare_op(nes_t *nes, u8 val1) {
   cpu_t *cpu = nes->cpu;
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+
+  // TODO: Can compare ops incur page cross penalties? I believe they can
+  if (cpu_get_operand_tick(nes, &addr, true)) {
     u8 val2 = cpu_read8(nes, addr);
     SET_BIT(cpu->p, C_FLAG, val1 >= val2);
     cpu_set_nz(nes, val1 - val2);
@@ -566,36 +569,31 @@ static void cpu_rmw_modify(nes_t *nes, u8 *val, rmw_op_type_t op_type) {
       // Set carry to old bit 7
       SET_BIT(cpu->p, C_FLAG, GET_BIT(*val, 7));
       *val <<= 1;
-      cpu_set_nz(nes, *val);
       break;
     case OP_LSR:
       SET_BIT(cpu->p, C_FLAG, *val & C_MASK);
       *val >>= 1;
-      cpu_set_nz(nes, *val);
       break;
     case OP_ROL:
       old_carry = cpu->p & C_MASK;
       SET_BIT(cpu->p, C_FLAG, GET_BIT(*val, 7));
       *val <<= 1;
       *val |= old_carry;
-      cpu_set_nz(nes, *val);
       break;
     case OP_ROR:
       old_carry = cpu->p & C_MASK;
       SET_BIT(cpu->p, C_FLAG, *val & C_MASK);
       *val >>= 1;
       *val |= old_carry << 7;
-      cpu_set_nz(nes, *val);
       break;
     case OP_INC:
       *val += 1;
-      cpu_set_nz(nes, *val);
       break;
     case OP_DEC:
       *val -= 1;
-      cpu_set_nz(nes, *val);
       break;
   }
+  cpu_set_nz(nes, *val);
 }
 
 static void cpu_rmw_op(nes_t *nes, rmw_op_type_t op_type) {
@@ -625,7 +623,8 @@ static void cpu_rmw_op(nes_t *nes, rmw_op_type_t op_type) {
     }
     cpu->op.cyc++;
   } else {
-    if (cpu_get_operand_tick(nes, &addr_bus)) {
+    // RMW ops do not incur page crossing penalties
+    if (cpu_get_operand_tick(nes, &addr_bus, false)) {
       data_bus = cpu_read8(nes, addr_bus);
       cpu->op.rmw_did_read = true;
       cpu->op.cyc = 0;
@@ -637,7 +636,7 @@ static void cpu_rmw_op(nes_t *nes, rmw_op_type_t op_type) {
 static void cpu_add_op(nes_t *nes, bool subtract) {
   cpu_t *cpu = nes->cpu;
   u16 addr = 0;
-  if (cpu_get_operand_tick(nes, &addr)) {
+  if (cpu_get_operand_tick(nes, &addr, true)) {
     u8 val = cpu_read8(nes, addr);
 
     // Subtraction is implemented by simply negating the operand
@@ -663,17 +662,16 @@ static void cpu_add_op(nes_t *nes, bool subtract) {
 static void cpu_set_op(cpu_t *cpu, u8 opcode) {
   cpu->op.code = opcode;
   cpu->op.mode = cpu_op_addrmodes[opcode];
-  cpu->op.handler = cpu_op_fns[opcode];
-  cpu->op.penalty = false;
-  cpu->op.do_branch = false;
+  cpu->op.handler = cpu_op_handlers[opcode];
   cpu->op.rmw_did_read = false;
+  cpu->op.penalty = false;
   cpu->op.cyc = 0;
 }
 
 // Does an operand fetch cycle for the current op. This is called once per cycle and takes a variable number of cycles
 // to complete, depending on the addressing mode. Returns true when the final operand address is calculated and placed
 // into `operand`. Returns false and does not set `operand` otherwise.
-static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
+static bool cpu_get_operand_tick(nes_t *nes, u16 *operand, bool is_read_op) {
   cpu_t *cpu = nes->cpu;
   // This doesn't include absolute indexed because that is only used in one instruction (JMP)
   // Absolute indexed is handled in oJMP()
@@ -692,9 +690,35 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
         return true;
       }
     case ABS_IDX_X:
-      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ABS_IDX_X");
     case ABS_IDX_Y:
-      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ABS_IDX_Y");
+      switch (cpu->op.cyc) {
+        case 0:
+          SET_BYTE_LO(addr_bus, cpu_read8(nes, cpu->pc++));
+          cpu->op.cyc++;
+          return false;
+        case 1:
+          SET_BYTE_HI(addr_bus, cpu_read8(nes, cpu->pc++));
+          cpu->op.cyc++;
+          return false;
+        case 2: {
+          u16 old_addr_bus = addr_bus;
+          u8 inc_val = cpu->op.mode == ABS_IDX_X ? cpu->x : cpu->y;
+          cpu_read8(nes, (addr_bus & ~0xFF) | ((addr_bus + inc_val) & 0xFF));
+
+          addr_bus += inc_val;
+          *operand = addr_bus;
+          if (!is_read_op || PAGE_CROSSED(old_addr_bus, addr_bus)) {
+            cpu->op.cyc++;
+            return false;
+          }
+
+          return true;
+        }
+        case 3:
+          // Page cross penalty cycle
+          *operand = addr_bus;
+          return true;
+      }
     case IMM:
       *operand = cpu->pc++;
       return true;
@@ -709,9 +733,26 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
         return true;
       }
     case ZP_IDX_X:
-      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IDX_X");
     case ZP_IDX_Y:
-      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IDX_Y");
+      switch (cpu->op.cyc) {
+        case 0:
+          // Fetch zero page address
+          addr_bus = cpu_read8(nes, cpu->pc++);
+          cpu->op.cyc++;
+          return false;
+        case 1:
+          // Add index reg to ZP address
+          cpu_read8(nes, addr_bus);
+
+          u8 inc_val = cpu->op.mode == ZP_IDX_X ? cpu->x : cpu->y;
+          addr_bus = (addr_bus + inc_val) & 0xFF;
+
+          cpu->op.cyc++;
+          return false;
+        case 2:
+          *operand = addr_bus;
+          return true;
+      }
     case ZP_IDX_IND:
       switch (cpu->op.cyc) {
         case 0:
@@ -743,7 +784,40 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand) {
           crash_and_burn("cpu_get_operand_tick: ZP_IDX_IND isn't working properly");
       }
     case ZP_IND_IDX_Y:
-      crash_and_burn("cpu_get_operand_tick: unimplemented addressing mode ZP_IND_IDX_Y");
+      switch (cpu->op.cyc) {
+        case 0:
+          // Fetch pointer from zero page
+          data_bus = cpu_read8(nes, cpu->pc++);
+          cpu->op.cyc++;
+          return false;
+        case 1:
+          // Fetch effective address low
+          SET_BYTE_LO(addr_bus, cpu_read8(nes, data_bus));
+          cpu->op.cyc++;
+          return false;
+        case 2:
+          // Fetch effective address high
+          SET_BYTE_HI(addr_bus, cpu_read8(nes, (data_bus + 1) & 0xFF));
+          cpu->op.cyc++;
+          return false;
+        case 3: {
+          u16 old_addr_bus = addr_bus;
+          cpu_read8(nes, (addr_bus & ~0xFF) | ((addr_bus + cpu->y) & 0xFF));
+
+          addr_bus += cpu->y;
+          *operand = addr_bus;
+          if (!is_read_op || PAGE_CROSSED(old_addr_bus, addr_bus)) {
+            cpu->op.cyc++;
+            return false;
+          }
+
+          return true;
+        }
+        case 4:
+          // Page cross penalty cycle
+          *operand = addr_bus;
+          return true;
+      }
     case IMPL_ACCUM:
       // Read next instruction byte and throw it away
       cpu_read8(nes, cpu->pc);
@@ -763,7 +837,7 @@ static addrmode_t get_addrmode(u8 opcode) {
   if (mode_i == 0x00 || mode_i == 0x09 || mode_i == 0x02) {
     if (opcode == 0x20)  // JSR
       return ABS;
-    if (opcode != 0x00 && opcode != 0x40 && opcode != 0x60)  // INTR_BRK, RTI, RTS
+    if (opcode != 0x00 && opcode != 0x40 && opcode != 0x60)  // BRK, RTI, RTS
       return IMM;
   } else if (mode_i >= 0x14 && mode_i <= 0x16) {
     if (opcode == 0x96 || opcode == 0xB6)  // STX, LDX
@@ -799,6 +873,10 @@ void cpu_tick(nes_t *nes) {
     cpu_set_op(cpu, cpu_read8(nes, cpu->pc++));
     cpu->fetch_op = false;
   } else {
+    if (!cpu->op.handler) {
+      printf("cpu_tick: unsupported opcode $%02X\n", cpu->op.code);
+      exit(EXIT_FAILURE);
+    }
     cpu->op.handler(nes);
   }
 
@@ -882,14 +960,20 @@ static void cpu_log_op(nes_t *nes) {
           fprintf(log_f, " $%04X                       ", operand);
       }
       break;
-    case ABS_IND:
-      fprintf(log_f, " ($%04X) = %04X              ", operand, addr_bus);
+    case ABS_IND: {
+      u8 lo = cpu_read8(nes, operand);
+      u8 hi = cpu_read8(nes, ((operand + 1) & 0xFF) | (operand & ~0xFF));
+      u16 fin = lo | (hi << 8);
+      fprintf(log_f, " ($%04X) = %04X              ", operand, fin);
       break;
+    }
     case ABS_IDX_X:
-    case ABS_IDX_Y:
+    case ABS_IDX_Y: {
+      u8 inc = mode == ABS_IDX_X ? cpu->x : cpu->y;
       fprintf(log_f, " $%04X,%s @ %04X = %02X         ", operand,
-              mode == ABS_IDX_X ? "X" : "Y", addr_bus, cpu_read8(nes, addr_bus));
+              mode == ABS_IDX_X ? "X" : "Y", (operand + inc) & 0xFFFF, cpu_read8(nes, operand + inc));
       break;
+    }
     case REL:
       // Add two because we haven't advanced the PC when this function is called
       fprintf(log_f, " $%04X                       ", nes->cpu->pc + (i8) operand + 2);
@@ -902,10 +986,12 @@ static void cpu_log_op(nes_t *nes) {
               cpu_read8(nes, operand));
       break;
     case ZP_IDX_X:
-    case ZP_IDX_Y:
+    case ZP_IDX_Y: {
+      u8 inc_val = mode == ZP_IDX_X ? cpu->x : cpu->y;
       fprintf(log_f, " $%02X,%s @ %02X = %02X             ", operand,
-              mode == ZP_IDX_X ? "X" : "Y", addr_bus, cpu_read8(nes, addr_bus));
+              mode == ZP_IDX_X ? "X" : "Y", (operand + inc_val) & 0xFF, cpu_read8(nes, (operand + inc_val) & 0xFF));
       break;
+    }
     case ZP_IDX_IND: {
       u16 zp_addr = (operand + cpu->x) & 0xFF;
       u8 at_zp_lo = cpu_read8(nes, zp_addr);
@@ -918,8 +1004,9 @@ static void cpu_log_op(nes_t *nes) {
     case ZP_IND_IDX_Y:
       low = cpu_read8(nes, operand);
       high = cpu_read8(nes, (operand + 1) & 0xFF);
+      u16 ind_addr = low | (high << 8);
       fprintf(log_f, " ($%02X),Y = %04X @ %04X = %02X  ", operand,
-              low | (high << 8), addr_bus, cpu_read8(nes, addr_bus));
+              ind_addr, (ind_addr + cpu->y) & 0xFFFF, cpu_read8(nes, ind_addr + cpu->y));
       break;
     case IMPL_ACCUM:
       // For some dumb reason, accumulator arithmetic instructions have "A" as
