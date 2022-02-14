@@ -3,17 +3,16 @@
 #include "include/mem.h"
 #include "include/util.h"
 #include "include/ppu.h"
+#include "include/apu.h"
 #include "include/args.h"
 
 #define OP_FUNC static inline void
 
+// Thanks to https://www.nesdev.org/6502_cpu.txt for great NES 6502 documentation
+
 // TODO: This whole file needs a refactor. I hate seeing nes-> everywhere, plus it makes the code less readable
-
-static void cpu_log_op(nes_t *nes);
-
-// This function is run immediately after getting the opcode and puts the effective operand/address
-// into operand
 static bool cpu_get_operand_tick(nes_t *nes, u16 *operand, bool is_read_op);
+static void cpu_log_op(nes_t *nes);
 static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag);
 static void cpu_pull_reg_op(nes_t *nes, bool reg_a);
 static void cpu_push_reg_op(nes_t *nes, bool reg_a);
@@ -21,7 +20,6 @@ static void cpu_compare_op(nes_t *nes, u8 val1);
 static void cpu_add_op(nes_t *nes, bool subtract);
 static void cpu_rmw_op(nes_t *nes, rmw_op_type_t op_type);
 
-// Thanks to https://www.nesdev.org/6502_cpu.txt for great NES 6502 documentation
 // This is just here for logging purposes
 const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 
@@ -29,16 +27,22 @@ const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 u16 addr_bus = 0;
 u8 data_bus = 0;
 
-// Lookup tables
+// Current cycle in OAM DMA sequence
+u16 oam_dma_cyc = 0;
+
+// Current cycle in interrupt setup sequence
+u8 intr_cyc = 0;
+
 // Addressing mode indexed by opcode
 addrmode_t cpu_op_addrmodes[CPU_NUM_OPCODES];
+
 
 OP_FUNC cpu_set_nz(nes_t *nes, u8 result) {
   SET_BIT(nes->cpu->p, N_FLAG, (result & 0x80) >> 7);
   SET_BIT(nes->cpu->p, Z_FLAG, !result);
 }
 
-// Function pointers to CPU instruction handlers
+// *************************************** CPU instruction handlers ***************************************
 OP_FUNC oADC(nes_t *nes) {
   cpu_add_op(nes, false);
 }
@@ -96,7 +100,8 @@ OP_FUNC oBPL(nes_t *nes) {
 }
 
 OP_FUNC oBRK(nes_t *nes) {
-  crash_and_burn("Instruction not implemented");
+  nes->cpu->brk = true;
+  nes->cpu->fetch_op = true;
 }
 
 OP_FUNC oBVC(nes_t *nes) {
@@ -256,31 +261,27 @@ OP_FUNC oJSR(nes_t *nes) {
 OP_FUNC oLDA(nes_t *nes) {
   u16 addr = 0;
   if (cpu_get_operand_tick(nes, &addr, true)) {
-    if (nes->cpu->op.mode == ABS_IDX_Y) {
-//      printf("oLDA: pc=$%04X addr=$%04X *addr=$%02X a=$%02X addrmode=%d\n", nes->cpu->pc, addr, cpu_read8(nes, addr),
-//             nes->cpu->a, nes->cpu->op.mode);
-    }
-    nes->cpu->fetch_op = true;
     nes->cpu->a = cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->a);
+    nes->cpu->fetch_op = true;
   }
 }
 
 OP_FUNC oLDX(nes_t *nes) {
   u16 addr = 0;
   if (cpu_get_operand_tick(nes, &addr, true)) {
-    nes->cpu->fetch_op = true;
     nes->cpu->x = cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->x);
+    nes->cpu->fetch_op = true;
   }
 }
 
 OP_FUNC oLDY(nes_t *nes) {
   u16 addr = 0;
   if (cpu_get_operand_tick(nes, &addr, true)) {
-    nes->cpu->fetch_op = true;
     nes->cpu->y = cpu_read8(nes, addr);
     cpu_set_nz(nes, nes->cpu->y);
+    nes->cpu->fetch_op = true;
   }
 }
 
@@ -450,6 +451,7 @@ OP_FUNC oTYA(nes_t *nes) {
   cpu_set_nz(nes, nes->cpu->a);
   nes->cpu->fetch_op = true;
 }
+// ********************************************************************************************************
 
 // TODO: Support unofficial opcodes (low priority)
 // Maps opcodes to functions that handle them
@@ -664,7 +666,6 @@ static void cpu_set_op(cpu_t *cpu, u8 opcode) {
   cpu->op.mode = cpu_op_addrmodes[opcode];
   cpu->op.handler = cpu_op_handlers[opcode];
   cpu->op.rmw_did_read = false;
-  cpu->op.penalty = false;
   cpu->op.cyc = 0;
 }
 
@@ -862,21 +863,72 @@ static void cpu_init_tables() {
     cpu_op_addrmodes[i] = get_addrmode(i);
 }
 
+// Returns true when interrupt sequence has finished
+static bool cpu_handle_interrupt(nes_t *nes, interrupt_t intr_type) {
+  cpu_t *cpu = nes->cpu;
+  switch (intr_cyc) {
+    case 0:
+      // Read next instruction byte and throw it away
+      cpu_read8(nes, cpu->pc);
+      break;
+    case 1:
+      // Push PCH on stack
+      cpu_push8(nes, GET_BYTE_HI(cpu->pc));
+      break;
+    case 2:
+      // Push PCL on stack
+      cpu_push8(nes, GET_BYTE_LO(cpu->pc));
+      break;
+    case 3:
+      switch (intr_type) {
+        case INTR_NMI:
+          addr_bus = VEC_NMI;
+          cpu_push8(nes, cpu->p & ~B_MASK);
+          break;
+        case INTR_IRQ:
+          addr_bus = VEC_IRQ;
+          cpu_push8(nes, cpu->p & ~B_MASK);
+          break;
+        case INTR_BRK:
+          addr_bus = VEC_IRQ;
+          cpu_push8(nes, cpu->p | B_MASK);
+          break;
+      }
+      break;
+    case 4:
+      // Fetch PCL and set I flag
+      SET_BYTE_LO(cpu->pc, cpu_read8(nes, addr_bus));
+      SET_BIT(cpu->p, I_FLAG, 1);
+      break;
+    case 5:
+      // Fetch PCH
+      SET_BYTE_HI(cpu->pc, cpu_read8(nes, addr_bus + 1));
+      return true;
+  }
+  intr_cyc++;
+  return false;
+}
+
 // Accurately emulates a single CPU cycle
 void cpu_tick(nes_t *nes) {
   cpu_t *cpu = nes->cpu;
 
+  //
   if (cpu->fetch_op) {
+    // Check for pending interrupts
+    if (cpu->nmi) {
+      if (!cpu_handle_interrupt(nes, INTR_NMI)) return;
+      cpu->nmi = false;
+    }
+
     if (nes->args->cpu_log_output)
       cpu_log_op(nes);
 
     cpu_set_op(cpu, cpu_read8(nes, cpu->pc++));
     cpu->fetch_op = false;
   } else {
-    if (!cpu->op.handler) {
-      printf("cpu_tick: unsupported opcode $%02X\n", cpu->op.code);
-      exit(EXIT_FAILURE);
-    }
+    if (!cpu->op.handler)
+      crash_and_burn("cpu_tick: unsupported opcode $%02X\n", cpu->op.code);
     cpu->op.handler(nes);
   }
 
@@ -902,9 +954,8 @@ void cpu_init(nes_t *nes) {
   cpu_init_tables();
 
   // Set PC to value at reset vector
-//  cpu->pc = cpu_read16(nes, VEC_RESET);
-  // TODO: This is just for nestest
-  cpu->pc = 0xC000;
+  cpu->pc = cpu_read16(nes, VEC_RESET);
+//  cpu->pc = 0xC000;
   cpu->fetch_op = true;
 }
 
@@ -943,8 +994,7 @@ static void cpu_log_op(nes_t *nes) {
       fprintf(log_f, "%02X %02X %02X ", opcode, low, high);
       break;
     default:
-      printf("cpu_log_op: invalid operand count, wtf?\n");
-      exit(EXIT_FAILURE);
+      crash_and_burn("cpu_log_op: invalid operand count, wtf?\n");
   }
   fprintf(log_f, " %s", cpu_opcode_tos(opcode));
   switch (mode) {

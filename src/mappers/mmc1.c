@@ -117,8 +117,7 @@ u8 mmc1_cpu_read(nes_t *nes, u16 addr) {
       }
       break;
     default:
-      printf("mmc1_cpu_read: mmc1_prg_bankmode is invalid=%d\n", mmc1_prg_bankmode);
-      exit(EXIT_FAILURE);
+      crash_and_burn("mmc1_cpu_read: mmc1_prg_bankmode is invalid=%d\n", mmc1_prg_bankmode);
   }
   printf("mmc1_cpu_read: something went really wrong\n");
 }
@@ -143,8 +142,7 @@ u8 mmc1_ppu_read(nes_t *nes, u16 addr) {
         }
         break;
       default:
-        printf("mmc1_ppu_read: invalid CHR banksz, wtf?");
-        exit(EXIT_FAILURE);
+        crash_and_burn("mmc1_ppu_read: invalid CHR banksz, wtf?");
     }
   }
   return crt->chr[d_addr]; // TODO: ????

@@ -1,6 +1,7 @@
 #include "include/mappers.h"
 #include "include/ppu.h"
 #include "include/cart.h"
+#include "include/util.h"
 
 u8 (*const mapper_cpu_read_fns[8])(nes_t *, u16) = {
     nrom_cpu_read, mmc1_cpu_read, NULL, NULL, NULL, NULL, NULL, axrom_cpu_read
@@ -36,8 +37,7 @@ void mapper_init(mapper_t *mapper, cart_t *cart) {
       printf("mapper_init: using AxROM mapper (%d)\n", cart->mapno);
       break;
     default:
-      printf("mapper_init: fatal: unsupported mapper %d!\n", cart->mapno);
-      exit(EXIT_FAILURE);
+      crash_and_burn("mapper_init: fatal: unsupported mapper %d!\n", cart->mapno);
   }
 
   // Set up the correct mapper function pointers
@@ -89,8 +89,7 @@ u16 mirror_ppu_addr(u16 addr, mirror_type_t mt) {
       addr += 0x400;
       break;
     default:
-      printf("mirror_ppu_addr: invalid mirroring!\n");
-      exit(EXIT_FAILURE);
+      crash_and_burn("mirror_ppu_addr: invalid mirroring!\n");
   }
 
   return addr;

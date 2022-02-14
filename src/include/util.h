@@ -34,6 +34,6 @@ int nes_fclose(FILE *f);
 char *cpu_opcode_tos(u8 opcode);
 
 // Displays an error message and aborts
-void crash_and_burn(const char *msg);
+void crash_and_burn(const char *msg, ...);
 
 #endif

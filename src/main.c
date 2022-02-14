@@ -48,16 +48,13 @@ int main(int argc, char **argv) {
   printf("cnes by Alex Restifo\n");
 
   // Init SDL
-  if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
-    printf("SDL_Init() failed: %s\n", SDL_GetError());
-    exit(EXIT_FAILURE);
-  }
+  if (SDL_Init(SDL_INIT_EVERYTHING) != 0)
+    crash_and_burn("SDL_Init() failed: %s\n", SDL_GetError());
 
   // Read command line arguments
-  if (argc != 2) {
-    printf("Invalid command line arguments.\n");
-    exit(EXIT_FAILURE);
-  }
+  // TODO: Usage string
+  if (argc != 2)
+    crash_and_burn("Invalid command line arguments.\n");
 
   // Initialize the NES and display window
   nes_t nes;

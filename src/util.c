@@ -73,8 +73,13 @@ i32 twos_complement(i32 num) {
   return -num;
 }
 
-void crash_and_burn(const char *msg) {
-  printf("%s\n", msg);
+void crash_and_burn(const char *msg, ...) {
+  va_list  arglist;
+
+  va_start(arglist, msg);
+  vprintf(msg, arglist);
+  va_end(arglist);
+
   exit(EXIT_FAILURE);
 }
 

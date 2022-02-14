@@ -42,8 +42,7 @@ u8 apu_read(nes_t *nes, u16 addr) {
                 (apu->noise.lc > 0) << 3 | (apu->frame_interrupt > 0) << 6;
     return retval;
   } else {
-    printf("apu_read: invalid read from $%04X\n", addr);
-    exit(EXIT_FAILURE);
+    crash_and_burn("apu_read: invalid read from $%04X\n", addr);
   }
 }
 

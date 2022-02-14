@@ -19,10 +19,8 @@ void cart_init(cart_t *cart, char *cart_fn) {
   nes_fread(&cart->header, 1, header_sz, cart_f);
 
   // Check header magic number
-  if (memcmp(cart->header.magic, INES_MAGIC, strlen(INES_MAGIC)) != 0) {
-    printf("cart_init: File specified is not a NES ROM.\n");
-    exit(EXIT_FAILURE);
-  }
+  if (memcmp(cart->header.magic, INES_MAGIC, strlen(INES_MAGIC)) != 0)
+    crash_and_burn("cart_init: File specified is not a NES ROM.\n");
 
   // Is a trainer present? Bit 3 (mask 0x04) is the trainer present bit
   if (cart->header.flags6 & 0x04) {

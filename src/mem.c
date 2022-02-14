@@ -4,6 +4,7 @@
 #include "include/cart.h"
 #include "include/apu.h"
 #include "include/mappers.h"
+#include "include/util.h"
 
 void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   if (addr <= 0x1FFF) {
@@ -43,8 +44,7 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     // APU status register
     return apu_read(nes, addr);
   } else if (addr >= 0x4018 && addr <= 0x401F) {
-    printf("cpu_read8: reading cpu test mode registers is not supported.\n");
-    exit(EXIT_FAILURE);
+    crash_and_burn("cpu_read8: reading cpu test mode registers is not supported.\n");
   } else if (addr >= 0x4020 && addr <= 0xFFFF) {
     // Cartridge space; read value from mapper
     return nes->mapper->cpu_read(nes, addr);

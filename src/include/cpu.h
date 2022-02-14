@@ -81,9 +81,6 @@ typedef struct cpu_op {
 
   // Set when the read phase of a RMW instruction finishes
   bool rmw_did_read;
-
-  // Did we incur a page cross penalty?
-  bool penalty;
 } cpu_op_t;
 
 // The NES uses a MOS Technology 6502 CPU with minimal modifications
@@ -99,6 +96,7 @@ typedef struct cpu {
 
   // Interrupt flags
   bool nmi;
+  bool brk;
 
   // How many CPU cycles have passed since initialization
   u64 ticks;
