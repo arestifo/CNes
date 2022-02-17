@@ -12,7 +12,7 @@
 
 // TODO: This whole file needs a refactor. I hate seeing nes-> everywhere, plus it makes the code less readable
 static bool cpu_get_operand_tick(nes_t *nes, u16 *operand, bool is_read_op);
-static void cpu_log_op(nes_t *nes);
+static void cpu_log_op(nes_t *nes, bool debug_nmi);
 static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag);
 static void cpu_pull_reg_op(nes_t *nes, bool reg_a);
 static void cpu_push_reg_op(nes_t *nes, bool reg_a);
@@ -29,6 +29,8 @@ u8 data_bus = 0;
 
 // Current cycle in OAM DMA sequence
 u16 oam_dma_cyc = 0;
+u16 oam_dma_byte = 0;
+bool oam_dma_read = false;
 
 // Current cycle in interrupt setup sequence
 u8 intr_cyc = 0;
@@ -866,6 +868,7 @@ static void cpu_init_tables() {
 // Returns true when interrupt sequence has finished
 static bool cpu_handle_interrupt(nes_t *nes, interrupt_t intr_type) {
   cpu_t *cpu = nes->cpu;
+  printf("handle irq type=%d cyc=%d\n", intr_type, intr_cyc);
   switch (intr_cyc) {
     case 0:
       // Read next instruction byte and throw it away
@@ -898,33 +901,102 @@ static bool cpu_handle_interrupt(nes_t *nes, interrupt_t intr_type) {
     case 4:
       // Fetch PCL and set I flag
       SET_BYTE_LO(cpu->pc, cpu_read8(nes, addr_bus));
-      SET_BIT(cpu->p, I_FLAG, 1);
+      if (intr_type != INTR_NMI)
+        SET_BIT(cpu->p, I_FLAG, 1);
       break;
     case 5:
       // Fetch PCH
       SET_BYTE_HI(cpu->pc, cpu_read8(nes, addr_bus + 1));
+      intr_cyc = 0;
+      cpu->fetch_op = true;
       return true;
   }
   intr_cyc++;
   return false;
 }
 
+static bool cpu_do_oam_dma(nes_t *nes) {
+  cpu_t *cpu = nes->cpu;
+  ppu_t *ppu = nes->ppu;
+
+  // Alternate read/write cycles
+  oam_dma_read = !oam_dma_read;
+
+  // Emulate the one cycle wait "for writes to complete"
+  if (oam_dma_cyc == 0) {
+    oam_dma_cyc++;
+    return false;
+  }
+
+  // Wait one more cycle if this is an odd CPU cycle
+  if (cpu->ticks & 1) {
+    oam_dma_cyc++;
+    return false;
+  }
+
+  // Read a page of memory starting at cpu->oam_dma_base into PPU OAM
+  if (oam_dma_byte < 256) {
+    if (oam_dma_read) {
+      // Read byte to be placed into OAM
+      data_bus = cpu_read8(nes, cpu->oam_dma_base + oam_dma_byte);
+    } else {
+      // Write byte to OAM. There are four bytes per sprite, so calculate the index into the sprite array
+      u8 sprite_idx = oam_dma_byte % 4;
+      if (sprite_idx == 0)
+        ppu->oam[sprite_idx].data.y_pos = data_bus;
+      else if (sprite_idx == 1)
+        ppu->oam[sprite_idx].data.tile_idx = data_bus;
+      else if (sprite_idx == 2)
+        ppu->oam[sprite_idx].data.attr = data_bus;
+      else if (sprite_idx == 3)
+        ppu->oam[sprite_idx].data.x_pos = data_bus;
+      ppu->oam[sprite_idx].sprite0 = sprite_idx == 0;
+      oam_dma_byte++;
+    }
+    return false;
+  } else {
+    // We're done here, reset all the OAM counters to their default values
+    oam_dma_byte = 0;
+    oam_dma_read = true;
+    oam_dma_cyc = 0;
+    return true;
+  }
+}
+
 // Accurately emulates a single CPU cycle
 void cpu_tick(nes_t *nes) {
   cpu_t *cpu = nes->cpu;
 
-  //
+  // First, check if we need to do OAM DMA
+  if (cpu->do_oam_dma) {
+    static int i = 0;
+    printf("doing oam dma byte=%d cyc=%d read=%d\n", oam_dma_byte, oam_dma_cyc, oam_dma_read);
+    if (!cpu_do_oam_dma(nes)) {
+      cpu->ticks++;
+      return;
+    }
+    cpu->do_oam_dma = false;
+  }
+
+  static bool debug_nmi = false;
   if (cpu->fetch_op) {
     // Check for pending interrupts
     if (cpu->nmi) {
-      if (!cpu_handle_interrupt(nes, INTR_NMI)) return;
+      if (!cpu_handle_interrupt(nes, INTR_NMI)) {
+        cpu->ticks++;
+        return;
+      }
+      debug_nmi = true;
       cpu->nmi = false;
     }
 
-    if (nes->args->cpu_log_output)
-      cpu_log_op(nes);
+    if (nes->args->cpu_log_output) {
+      cpu_log_op(nes, debug_nmi);
+      debug_nmi = false;
+    }
 
     cpu_set_op(cpu, cpu_read8(nes, cpu->pc++));
+
     cpu->fetch_op = false;
   } else {
     if (!cpu->op.handler)
@@ -963,7 +1035,7 @@ void cpu_destroy(nes_t *nes) {
   bzero(nes->cpu, sizeof *nes->cpu);
 }
 
-static void cpu_log_op(nes_t *nes) {
+static void cpu_log_op(nes_t *nes, bool debug_nmi) {
   u8 num_operands, low, high;
   cpu_t *cpu = nes->cpu;
 
@@ -1076,7 +1148,7 @@ static void cpu_log_op(nes_t *nes) {
           nes->ppu->dot, cpu->ticks);
 
   // Mark where interrupts occur
-  if (cpu->nmi) {
+  if (debug_nmi) {
     fprintf(log_f, " NMI!");
   }
 //  else if (cpu->irq_pending) {

@@ -106,6 +106,10 @@ typedef struct cpu {
 
   // Should we fetch a new opcode next cycle?
   bool fetch_op;
+
+  // OAM DMA parameters
+  u16 oam_dma_base;
+  bool do_oam_dma;
 } cpu_t;
 
 typedef enum interrupt {
