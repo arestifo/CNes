@@ -487,10 +487,10 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
 
       ppu->vram_addr += vram_inc;
       break;
-    case OAMADDR:
+    case OAMADDR: // $2003
       ppu->reg[OAMADDR] = val;
       break;
-    case OAMDATA:
+    case OAMDATA:  // $2004
       if (ppu_rendering_enabled(ppu)) {
         if (ppu->scanline == PRERENDER_LINE || (ppu->scanline >= 0 && ppu->scanline <= 239)) {
           // TODO: Implement the glitchy OAMADDR increment here

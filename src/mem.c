@@ -16,7 +16,6 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
       nes->ctrl1_sr = nes->ctrl1_sr_buf;
   } else if (addr == OAM_DMA_ADDR) {
     // Performs CPU -> PPU OAM DMA. Suspends the CPU for 513 or 514 cycles
-//    crash_and_burn("oam dma not working\n");
     nes->cpu->do_oam_dma = true;
     nes->cpu->oam_dma_base = val << 8;
   } else if (addr >= 0x4000 && addr <= 0x4017) {

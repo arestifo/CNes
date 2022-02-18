@@ -487,7 +487,6 @@ static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
 
       // Are we taking the branch?
       if (GET_BIT(cpu->p, flag_bit) == branch_if_flag) {
-        cpu->op.cyc++;
         break;
       }
 
@@ -497,20 +496,21 @@ static void cpu_branch_op(nes_t *nes, u8 flag_bit, bool branch_if_flag) {
     case 1: {
       // We're taking the branch, calculate the new PC. If it crosses a page boundary we need another
       // cycle to fix it
-      u16 new_pc = cpu->pc + (i8) data_bus;
-      if (PAGE_CROSSED(cpu->pc, new_pc)) {
+      if (PAGE_CROSSED(cpu->pc, cpu->pc + (i8) data_bus)) {
         break;
       }
 
-      cpu->pc = new_pc;
+      cpu->pc = cpu->pc + (i8) data_bus;
       cpu->fetch_op = true;
       break;
     }
     case 2:
       // Page cross penalty
+      cpu->pc = cpu->pc + (i8) data_bus;
       cpu->fetch_op = true;
       break;
   }
+  cpu->op.cyc++;
 }
 
 // Execute PLA or PLP, if reg_a is true we do PLA else PLP
@@ -868,7 +868,7 @@ static void cpu_init_tables() {
 // Returns true when interrupt sequence has finished
 static bool cpu_handle_interrupt(nes_t *nes, interrupt_t intr_type) {
   cpu_t *cpu = nes->cpu;
-  printf("handle irq type=%d cyc=%d\n", intr_type, intr_cyc);
+//  printf("handle irq type=%d cyc=%d\n", intr_type, intr_cyc);
   switch (intr_cyc) {
     case 0:
       // Read next instruction byte and throw it away
@@ -922,24 +922,26 @@ static bool cpu_do_oam_dma(nes_t *nes) {
   // Alternate read/write cycles
   oam_dma_read = !oam_dma_read;
 
-  // Emulate the one cycle wait "for writes to complete"
-  if (oam_dma_cyc == 0) {
-    oam_dma_cyc++;
-    return false;
-  }
-
-  // Wait one more cycle if this is an odd CPU cycle
-  if (cpu->ticks & 1) {
-    oam_dma_cyc++;
-    return false;
-  }
+//  // Emulate the one cycle wait "for writes to complete"
+//  if (oam_dma_cyc == 0) {
+//    oam_dma_cyc++;
+//    return false;
+//  }
+//
+//  // Wait one more cycle if this is an odd CPU cycle
+//  if (cpu->ticks & 1) {
+//    oam_dma_cyc++;
+//    return false;
+//  }
 
   // Read a page of memory starting at cpu->oam_dma_base into PPU OAM
   if (oam_dma_byte < 256) {
     if (oam_dma_read) {
       // Read byte to be placed into OAM
       data_bus = cpu_read8(nes, cpu->oam_dma_base + oam_dma_byte);
+      printf("oam dma read, dma_base=$%04X dma_byte=$%02X data=$%02X\n", cpu->oam_dma_base, oam_dma_byte, data_bus);
     } else {
+      printf("oam dma write, dma_base=$%04X dma_byte=$%02X data=$%02X\n", cpu->oam_dma_base, oam_dma_byte, data_bus);
       // Write byte to OAM. There are four bytes per sprite, so calculate the index into the sprite array
       u8 sprite_idx = oam_dma_byte % 4;
       if (sprite_idx == 0)
@@ -959,6 +961,8 @@ static bool cpu_do_oam_dma(nes_t *nes) {
     oam_dma_byte = 0;
     oam_dma_read = true;
     oam_dma_cyc = 0;
+    cpu->do_oam_dma = false;
+    cpu->oam_dma_base = 0;
     return true;
   }
 }
@@ -969,8 +973,6 @@ void cpu_tick(nes_t *nes) {
 
   // First, check if we need to do OAM DMA
   if (cpu->do_oam_dma) {
-    static int i = 0;
-    printf("doing oam dma byte=%d cyc=%d read=%d\n", oam_dma_byte, oam_dma_cyc, oam_dma_read);
     if (!cpu_do_oam_dma(nes)) {
       cpu->ticks++;
       return;
@@ -978,7 +980,6 @@ void cpu_tick(nes_t *nes) {
     cpu->do_oam_dma = false;
   }
 
-  static bool debug_nmi = false;
   if (cpu->fetch_op) {
     // Check for pending interrupts
     if (cpu->nmi) {
@@ -986,17 +987,19 @@ void cpu_tick(nes_t *nes) {
         cpu->ticks++;
         return;
       }
-      debug_nmi = true;
       cpu->nmi = false;
-    }
 
-    if (nes->args->cpu_log_output) {
-      cpu_log_op(nes, debug_nmi);
-      debug_nmi = false;
+      if (nes->args->cpu_log_output) {
+        cpu_log_op(nes, true);
+      }
+    } else {
+      // Normal instruction sequence
+      if (nes->args->cpu_log_output) {
+        cpu_log_op(nes, false);
+      }
     }
 
     cpu_set_op(cpu, cpu_read8(nes, cpu->pc++));
-
     cpu->fetch_op = false;
   } else {
     if (!cpu->op.handler)
