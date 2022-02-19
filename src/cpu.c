@@ -702,15 +702,18 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand, bool is_read_op) {
         case 2: {
           u16 old_addr_bus = addr_bus;
           u8 inc_val = cpu->op.mode == ABS_IDX_X ? cpu->x : cpu->y;
-          cpu_read8(nes, (addr_bus & ~0xFF) | ((addr_bus + inc_val) & 0xFF));
+
+          // TODO: This dummy read is faithful to how the 6502 implements absolute indexed addressing but causes
+          // TODO: problems with controller reading. Find a way to re-enable this
+//          cpu_read8(nes, (addr_bus & ~0xFF) | ((addr_bus + inc_val) & 0xFF));
 
           addr_bus += inc_val;
-          *operand = addr_bus;
           if (!is_read_op || PAGE_CROSSED(old_addr_bus, addr_bus)) {
             cpu->op.cyc++;
             return false;
           }
 
+          *operand = addr_bus;
           return true;
         }
         case 3:
@@ -741,6 +744,7 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand, bool is_read_op) {
           return false;
         case 1:
           // Add index reg to ZP address
+          // Zero-page dummy reads are free from side effects so we can leave it here
           cpu_read8(nes, addr_bus);
 
           u8 inc_val = cpu->op.mode == ZP_IDX_X ? cpu->x : cpu->y;
@@ -801,15 +805,16 @@ static bool cpu_get_operand_tick(nes_t *nes, u16 *operand, bool is_read_op) {
           return false;
         case 3: {
           u16 old_addr_bus = addr_bus;
-          cpu_read8(nes, (addr_bus & ~0xFF) | ((addr_bus + cpu->y) & 0xFF));
+          // TODO: This is also a potentially problematic dummy read
+//          cpu_read8(nes, (addr_bus & ~0xFF) | ((addr_bus + cpu->y) & 0xFF));
 
           addr_bus += cpu->y;
-          *operand = addr_bus;
           if (!is_read_op || PAGE_CROSSED(old_addr_bus, addr_bus)) {
             cpu->op.cyc++;
             return false;
           }
 
+          *operand = addr_bus;
           return true;
         }
         case 4:

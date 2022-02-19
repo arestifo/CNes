@@ -11,9 +11,10 @@ typedef enum mirror_type {
 // Maps iNES mapper numbers to mapper functions
 // Currently supported:
 // 000: NROM
+// 001: MMC1
+// 007: ANROM
 //
 // Plans to support:
-// 001: MMC1
 // 002: UxROM
 // 003: CNROM
 // 004: MMC3
