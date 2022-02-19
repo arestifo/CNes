@@ -44,7 +44,7 @@ void window_update(window_t *wnd, nes_t *nes) {
     // 2 APU ticks per CPU cycle, but we run the APU at the same rate as the CPU  to increase accuracy.
     // (The number of CPU ticks per frame sequencer clock is a nice round number (7457), while the number of APU ticks
     // per frame seq. clock is half that which is a bad ugly decimal)
-    while (nes->apu->ticks < nes->cpu->ticks)
+    while (nes->apu->ticks * 2 < nes->cpu->ticks)
       apu_tick(nes);
   }
 

@@ -368,9 +368,6 @@ static void apu_quarter_frame_tick(apu_t *apu) {
   apu_clock_envelope(&apu->pulse1.env);
   apu_clock_envelope(&apu->pulse2.env);
   apu_clock_envelope(&apu->noise.env);
-
-//  // *********** Render and queue some audio ***********
-//  apu_render_audio(apu);
 }
 
 static void apu_half_frame_tick(apu_t *apu) {

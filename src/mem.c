@@ -12,11 +12,11 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   } else if (addr >= 0x2000 && addr <= 0x3FFF) {
     ppu_reg_write(nes, addr % 8, val);
   } else if (addr == CONTROLLER1_PORT) {
+//    nes->ctrl1_sr = nes->ctrl1_sr_buf;
     if (val & 1)
       nes->ctrl1_sr = nes->ctrl1_sr_buf;
   } else if (addr == OAM_DMA_ADDR) {
     // Performs CPU -> PPU OAM DMA. Suspends the CPU for 513 or 514 cycles
-//    crash_and_burn("oam dma not working\n");
     nes->cpu->do_oam_dma = true;
     nes->cpu->oam_dma_base = val << 8;
   } else if (addr >= 0x4000 && addr <= 0x4017) {
@@ -35,8 +35,6 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     return ppu_reg_read(nes, addr & 7);
   } else if (addr == CONTROLLER1_PORT) {
     u8 retval = nes->ctrl1_sr;
-
-    nes->ctrl1_sr >>= 1;
 
     return (retval & 1) | 0x40;
   } else if (addr == CONTROLLER2_PORT) {

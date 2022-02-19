@@ -15,7 +15,7 @@ u8 mmc1_chr_bank0 = 0;
 u8 mmc1_chr_bank1 = 0;
 
 u16 mmc1_prg_banksz = 0x4000;  // 16K PRG ROM window, can be changed to 32K
-u16 mmc1_chr_banksz = 0x1000;  // 8K CHR ROM window, can be changed to 4K
+u16 mmc1_chr_banksz = 0x1000;  // 4K CHR ROM window, can be changed to 8K
 
 //u8 mmc1_prg_bankmode = 0;
 u8 mmc1_prg_bankmode = 3;

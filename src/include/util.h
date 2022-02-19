@@ -7,7 +7,7 @@
 #define SET_BIT(num, n, x) ((num) = (((num) & ~(1 << (n))) | ((x) << (n))))
 #define GET_BIT(num, n) (!!((num) & (1 << (n))))
 
-// Get upper and lower bytes of a u16
+// Getters and setters for upper and lower bytes of u16's
 #define GET_BYTE_LO(src) ((src) & 0xFF)
 #define GET_BYTE_HI(src) (((src) & 0xFF00) >> 8)
 

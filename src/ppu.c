@@ -149,8 +149,6 @@ static u32 ppu_render_pixel(nes_t *nes) {
 
       // **** Extract two pattern table color bits ****
       // We're ANDing with a mask > 1, but we want bit_lo and bit_hi to be in {0..1}
-      // The !! "operator" returns 1 if its input > 0 and 0 if its input is 0. It is essentially
-      // casts a number to a bool
       u8 pixel_mask = 0x80 >> ppu->fine_x;
       u8 pt_color_bits = ((pt_val_lo & pixel_mask) > 0) | ((pt_val_hi & pixel_mask) > 0) << 1;
 
@@ -431,6 +429,7 @@ u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
   }
 }
 
+// CPU to PPU interface function, only gets called from CPU
 void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
   ppu_t *ppu = nes->ppu;
   u8 vram_inc;
@@ -487,10 +486,10 @@ void ppu_reg_write(nes_t *nes, ppureg_t reg, u8 val) {
 
       ppu->vram_addr += vram_inc;
       break;
-    case OAMADDR:
+    case OAMADDR: // $2003
       ppu->reg[OAMADDR] = val;
       break;
-    case OAMDATA:
+    case OAMDATA:  // $2004
       if (ppu_rendering_enabled(ppu)) {
         if (ppu->scanline == PRERENDER_LINE || (ppu->scanline >= 0 && ppu->scanline <= 239)) {
           // TODO: Implement the glitchy OAMADDR increment here
