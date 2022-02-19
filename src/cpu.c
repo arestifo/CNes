@@ -20,17 +20,13 @@ static void cpu_compare_op(nes_t *nes, u8 val1);
 static void cpu_add_op(nes_t *nes, bool subtract);
 static void cpu_rmw_op(nes_t *nes, rmw_op_type_t op_type);
 
-// This is just here for logging purposes
-const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
-
 // TODO: Implement open-bus behavior. This is also unclean and should probably be behind some interface
 u16 addr_bus = 0;
 u8 data_bus = 0;
 
 // Current cycle in OAM DMA sequence
-u16 oam_dma_cyc = 0;
 u16 oam_dma_byte = 0;
-bool oam_dma_read = false;
+bool oam_dma_read = true;
 
 // Current cycle in interrupt setup sequence
 u8 intr_cyc = 0;
@@ -38,7 +34,7 @@ u8 intr_cyc = 0;
 // Addressing mode indexed by opcode
 addrmode_t cpu_op_addrmodes[CPU_NUM_OPCODES];
 
-
+// Helper function to set proper CPU negative and zero flags
 OP_FUNC cpu_set_nz(nes_t *nes, u8 result) {
   SET_BIT(nes->cpu->p, N_FLAG, (result & 0x80) >> 7);
   SET_BIT(nes->cpu->p, Z_FLAG, !result);
@@ -910,6 +906,8 @@ static bool cpu_handle_interrupt(nes_t *nes, interrupt_t intr_type) {
       intr_cyc = 0;
       cpu->fetch_op = true;
       return true;
+    default:
+      crash_and_burn("cpu_handle_interrupt: invalid interrupt cycle\n");
   }
   intr_cyc++;
   return false;
@@ -919,48 +917,43 @@ static bool cpu_do_oam_dma(nes_t *nes) {
   cpu_t *cpu = nes->cpu;
   ppu_t *ppu = nes->ppu;
 
-  // Alternate read/write cycles
-  oam_dma_read = !oam_dma_read;
-
-//  // Emulate the one cycle wait "for writes to complete"
-//  if (oam_dma_cyc == 0) {
-//    oam_dma_cyc++;
-//    return false;
-//  }
-//
-//  // Wait one more cycle if this is an odd CPU cycle
-//  if (cpu->ticks & 1) {
-//    oam_dma_cyc++;
-//    return false;
-//  }
+//  // Alternate read/write cycles
+//  oam_dma_read = !oam_dma_read;
 
   // Read a page of memory starting at cpu->oam_dma_base into PPU OAM
   if (oam_dma_byte < 256) {
     if (oam_dma_read) {
       // Read byte to be placed into OAM
       data_bus = cpu_read8(nes, cpu->oam_dma_base + oam_dma_byte);
-      printf("oam dma read, dma_base=$%04X dma_byte=$%02X data=$%02X\n", cpu->oam_dma_base, oam_dma_byte, data_bus);
+//      printf("oam dma read, dma_base=$%04X dma_byte=$%02X data=$%02X\n", cpu->oam_dma_base, oam_dma_byte, data_bus);
     } else {
-      printf("oam dma write, dma_base=$%04X dma_byte=$%02X data=$%02X\n", cpu->oam_dma_base, oam_dma_byte, data_bus);
+//      printf("oam dma write, dma_base=$%04X dma_byte=$%02X data=$%02X\n", cpu->oam_dma_base, oam_dma_byte, data_bus);
       // Write byte to OAM. There are four bytes per sprite, so calculate the index into the sprite array
-      u8 sprite_idx = oam_dma_byte % 4;
-      if (sprite_idx == 0)
+      u8 attr_idx = oam_dma_byte % 4;
+      u8 sprite_idx = oam_dma_byte >> 2;
+      if (attr_idx == 0)
         ppu->oam[sprite_idx].data.y_pos = data_bus;
-      else if (sprite_idx == 1)
+      else if (attr_idx == 1)
         ppu->oam[sprite_idx].data.tile_idx = data_bus;
-      else if (sprite_idx == 2)
+      else if (attr_idx == 2)
         ppu->oam[sprite_idx].data.attr = data_bus;
-      else if (sprite_idx == 3)
+      else if (attr_idx == 3)
         ppu->oam[sprite_idx].data.x_pos = data_bus;
       ppu->oam[sprite_idx].sprite0 = sprite_idx == 0;
       oam_dma_byte++;
     }
+
+    // Alternate read/write cycles
+    oam_dma_read = !oam_dma_read;
+    return false;
+  } else if (oam_dma_byte == 256) {
+    // Wait one more cycle to synchronize timing
+    oam_dma_byte++;
     return false;
   } else {
     // We're done here, reset all the OAM counters to their default values
     oam_dma_byte = 0;
     oam_dma_read = true;
-    oam_dma_cyc = 0;
     cpu->do_oam_dma = false;
     cpu->oam_dma_base = 0;
     return true;
@@ -971,22 +964,14 @@ static bool cpu_do_oam_dma(nes_t *nes) {
 void cpu_tick(nes_t *nes) {
   cpu_t *cpu = nes->cpu;
 
-  // First, check if we need to do OAM DMA
-  if (cpu->do_oam_dma) {
-    if (!cpu_do_oam_dma(nes)) {
-      cpu->ticks++;
-      return;
-    }
-    cpu->do_oam_dma = false;
-  }
-
   if (cpu->fetch_op) {
-    // Check for pending interrupts
+    // Check if we need to do OAM DMA
+    if (cpu->do_oam_dma)
+      if (!cpu_do_oam_dma(nes)) goto done;
+
+    // Check for pending NMI
     if (cpu->nmi) {
-      if (!cpu_handle_interrupt(nes, INTR_NMI)) {
-        cpu->ticks++;
-        return;
-      }
+      if (!cpu_handle_interrupt(nes, INTR_NMI)) goto done;
       cpu->nmi = false;
 
       if (nes->args->cpu_log_output) {
@@ -1007,6 +992,7 @@ void cpu_tick(nes_t *nes) {
     cpu->op.handler(nes);
   }
 
+  done:
   cpu->ticks++;
 }
 
@@ -1030,7 +1016,6 @@ void cpu_init(nes_t *nes) {
 
   // Set PC to value at reset vector
   cpu->pc = cpu_read16(nes, VEC_RESET);
-//  cpu->pc = 0xC000;
   cpu->fetch_op = true;
 }
 
@@ -1039,6 +1024,7 @@ void cpu_destroy(nes_t *nes) {
 }
 
 static void cpu_log_op(nes_t *nes, bool debug_nmi) {
+  const int OPERAND_SIZES[] = {2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0};
   u8 num_operands, low, high;
   cpu_t *cpu = nes->cpu;
 
@@ -1151,6 +1137,9 @@ static void cpu_log_op(nes_t *nes, bool debug_nmi) {
           nes->ppu->dot, cpu->ticks);
 
   // Mark where interrupts occur
+  if (cpu->do_oam_dma) {
+    fprintf(log_f, " OAM_DMA! ");
+  }
   if (debug_nmi) {
     fprintf(log_f, " NMI!");
   }
@@ -1159,5 +1148,5 @@ static void cpu_log_op(nes_t *nes, bool debug_nmi) {
 //  }
 
   fprintf(log_f, "\n");
-  fflush(log_f);
+//  fflush(log_f);
 }

@@ -64,7 +64,8 @@ int main(int argc, char **argv) {
   window_init(&window);
 
   // TODO: Make more robust CPU logging
-  nes.args->cpu_log_output = true;
+//  nes.args->cpu_log_output = true;
+  nes.args->cpu_log_output = false;
   nes.args->cpu_logf = nes_fopen("../logs/cpu.log", "w");
 
   // TODO: Make this configurable
