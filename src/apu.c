@@ -25,7 +25,8 @@ const u16 NOISE_SEQ_LENS[16] = {4, 8, 16, 32, 64, 96, 128, 160, 202,
 // Lookup tables
 f64 pulse_periods[2048];
 f64 triangle_periods[2048];
-f64 noise_periods[16];
+f64 noise_periods[2048];
+//f64 noise_periods[16];
 
 u32 env_periods[16];
 f64 pulse_volume_table[31];
@@ -159,7 +160,7 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
     case 0x400E:
       // Noise mode and period
       apu->noise.mode = val >> 7;
-      apu->noise.period = val & 0xF;
+      apu->noise.period = NOISE_SEQ_LENS[val & 0xF];
       break;
     case 0x400F:
       // Noise length counter load
@@ -296,7 +297,7 @@ static void apu_render_audio(apu_t *apu) {
   const f64 NOISE_SMP_PER_SEQ = noise_periods[apu->noise.period];
 
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
-//  printf("apu_render_audio: bufsz=%d p1 seq_c=%d, p2 seq_c=%d, t seq_c=%d, n seq_c=%d\n",
+//  printf("apu_render_audio: bufsz=%d p1 seq_c=%.2f, p2 seq_c=%.2f, t seq_c=%.2f, n seq_c=%.2f\n",
 //         SDL_GetQueuedAudioSize(apu->device_id), apu->pulse1.seq_c, apu->pulse2.seq_c, apu->triangle.seq_c, apu->noise.seq_c);
   // TODO: Adjust the audio buffer scaling factor dynamically when a buffer underrun is detected
   while (SDL_GetQueuedAudioSize(apu->device_id) < apu->audio_spec.freq / apu->buf_scale_factor) {
@@ -318,9 +319,7 @@ static void apu_render_audio(apu_t *apu) {
     // **** Noise synth ****
     if (apu->noise.lc > 0 && apu->status.noise_enable) {
       // Increment noise counter and shift noise shift register
-      if (!(apu->noise.shift_reg & 1)) {
-        noise_out = apu_get_envelope_volume(&apu->noise.env);
-      }
+      noise_out = !(apu->noise.shift_reg & 1) * apu_get_envelope_volume(&apu->noise.env);
     }
 
     // Increment waveform generator counters
@@ -328,7 +327,8 @@ static void apu_render_audio(apu_t *apu) {
     apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
     apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
 
-    apu->noise.seq_c += 1;
+    // Increment noise sequence counter
+    apu->noise.seq_c += 1.;
     if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
       apu->noise.seq_c -= NOISE_SMP_PER_SEQ;
 
@@ -341,13 +341,13 @@ static void apu_render_audio(apu_t *apu) {
 
     // Mix channels together to get the final sample
 //    static int debug = 0;
-//    if (debug == 32) {
+//    if (debug == 8) {
 //      debug = 0;
 //      printf("apu_render_audio: p1_out=%d p2_out=%d t_out=%d n_out=%d d_out=%d\n",
 //             pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
 //    } else { debug++; }
+
     i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
-//    i16 final_sample = apu_mix_audio(0, 0, 0, noise_out, dmc_out);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -442,11 +442,11 @@ static void apu_init_lookup_tables(apu_t *apu) {
   f64 smp_rate_d = (f64) apu->audio_spec.freq;
 
   for (int i = 0; i < 31; i++)
-    pulse_volume_table[i] = 95.52 / (8128.0 / i + 100);
+    pulse_volume_table[i] = 95.52 / (8128. / i + 100);
 
   // **** Triangle, noise, and DMC channels ****
   for (int i = 0; i < 203; i++)
-    tnd_volume_table[i] = 163.67 / (24329.0 / i + 100);
+    tnd_volume_table[i] = 163.67 / (24329. / i + 100);
 
   // *************** APU envelope lookup tables ***************
   // There are 16 possible envelope periods (env->n is a 4-bit value)
@@ -454,13 +454,18 @@ static void apu_init_lookup_tables(apu_t *apu) {
     env_periods[i] = NTSC_CPU_SPEED / (i + 1);
 
   // *************** APU frequency lookup tables ***************
+//  for (int i = 0; i < 2048; i++) {
+//    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
+//    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
+//  }
+//
+//  for (int i = 0; i < 16; i++)
+//    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
   for (int i = 0; i < 2048; i++) {
     pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
     triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
+    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
   }
-
-  for (int i = 0; i < 16; i++)
-    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
 }
 
 void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {

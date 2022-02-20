@@ -12,9 +12,8 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   } else if (addr >= 0x2000 && addr <= 0x3FFF) {
     ppu_reg_write(nes, addr % 8, val);
   } else if (addr == CONTROLLER1_PORT) {
-//    nes->ctrl1_sr = nes->ctrl1_sr_buf;
-    printf("cpu_write8: ctrl1 write val=$%02X ctrl1_sr=$%02X ctrl1_sr_buf=$%02X\n", val, nes->ctrl1_sr,
-           nes->ctrl1_sr_buf);
+//    printf("cpu_write8: ctrl1 write val=$%02X ctrl1_sr=$%02X ctrl1_sr_buf=$%02X\n", val, nes->ctrl1_sr,
+//           nes->ctrl1_sr_buf);
     if (val & 1)
       nes->ctrl1_sr = nes->ctrl1_sr_buf;
   } else if (addr == OAM_DMA_ADDR) {
@@ -41,9 +40,9 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     // Shift controller SR at most once per instruction
     nes->ctrl1_sr >>= 1;
 
-    printf("cpu_read8: ctrl1 read cpu op=%s pc=$%04X retval=$%02X ctrl1_sr_buf=$%02X ticks=%lu mode=%d op_cyc=%d\n",
-           cpu_opcode_tos(nes->cpu->op.code), nes->cpu->pc, retval, nes->ctrl1_sr_buf, nes->cpu->ticks,
-           nes->cpu->op.mode, nes->cpu->op.cyc);
+//    printf("cpu_read8: ctrl1 read cpu op=%s pc=$%04X retval=$%02X ctrl1_sr_buf=$%02X ticks=%lu mode=%d op_cyc=%d\n",
+//           cpu_opcode_tos(nes->cpu->op.code), nes->cpu->pc, retval, nes->ctrl1_sr_buf, nes->cpu->ticks,
+//           nes->cpu->op.mode, nes->cpu->op.cyc);
     return retval;
   } else if (addr == CONTROLLER2_PORT) {
     // TODO Controller 2 reads (low priority)

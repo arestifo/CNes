@@ -107,14 +107,13 @@ typedef struct apu {
 
     // Noise channel parameters
     u8 mode;
-    u16 period;
+    u8 period;
 
     // Length counter load value
     u8 lc_idx;
 
     u8 lc;
-//    u16 shift_reg: 15;
-    u32 shift_reg;
+    u16 shift_reg;
     f64 seq_c;
   } noise;
 
