@@ -160,7 +160,7 @@ typedef struct apu {
 u8 apu_read(nes_t *nes, u16 addr);
 void apu_write(nes_t *nes, u16 addr, u8 val);
 
-void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len);
+void apu_init(nes_t *nes, u32 sample_rate, u32 buf_len);
 void apu_tick(nes_t *nes);
 void apu_destroy(nes_t *nes);
 

@@ -72,6 +72,7 @@ typedef struct ppu {
   // PPU memory
   u8 reg[NUM_PPUREGS];         // PPU internal registers
   sprite_t oam[OAM_NUM_SPR];    // PPU Object Attribute Memory. Stores 64 sprites for the whole frame
+  u32 palette[PALETTE_SZ];      // System-wide palette is 64 ARGB colors
 
   // PPU secondary OAM. Stores 8 sprites for the current scanline
   sprite_t sec_oam[SEC_OAM_NUM_SPR];
@@ -87,11 +88,7 @@ typedef struct ppu {
   u8 fine_x;                    // X offset within the current tile for the current pixel
   u8 scroll_x;                  // TODO: This shouldn't be necessary
 
-  // PPU Flags and metadata
-  bool nmi_occurred;            // Whether the PPU is currently generating NMIs or not
-
   u64 ticks;                    // Number of PPU cycles
-  u32 palette[PALETTE_SZ];      // System-wide palette
 } ppu_t;
 
 // PPU register access

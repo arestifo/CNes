@@ -226,14 +226,11 @@ static u32 ppu_render_pixel(nes_t *nes) {
           u16 pt_addr, pt_base;
           if (is_8x16) {
             // 8x16 sprites
-            // TODO: This doesn't work fully. Horizontal and vertical flipping on 8x16 sprites looks totally busted.
-
             // The sprite pattern table addr for 8x16 sprites is determined by the sprite's tile number in OAM:
             // TTTT TTTP
             // Where the T bits (bits 1-7) are the tile number and bit 0 is the pattern table base (0x1000 or 0)
-            // That's why we mask the tile index with 0xFE (binary 1111 1110) to get the T bits
+            // That's why we mask the tile index with ~1 (u16 binary 1111 1110) to get the T bits
             pt_base = active_spr.data.tile_idx & 1 ? 0x1000 : 0;
-//            pt_addr = pt_base + (active_spr.data.tile_idx & 0xFE) * 16 + pt_fine_y_offset;
             pt_addr = pt_base + (active_spr.data.tile_idx & ~1) * 16 + pt_fine_y_offset;
           } else {
             // 8x8 sprites
@@ -339,7 +336,7 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
     // VBlank scanlines
     // Issue NMI at the second dot (dot=1) of the first VBlank scanline
     if (SCANLINE == 241 && DOT == 1) {
-      ppu->nmi_occurred = true;
+//      ppu->nmi_occurred = true;
       SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 1);
 
       if (GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_NMI_ENABLE_BIT))
@@ -352,7 +349,7 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
       // All visible scanlines have been rendered, frame is ready to be displayed
       wnd->frame_ready = true;
       ppu->frameno++;
-      ppu->nmi_occurred = false;
+//      ppu->nmi_occurred = false;
       SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_VBLANK_BIT, 0);
       SET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT, 0);
     }

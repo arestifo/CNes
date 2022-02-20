@@ -32,6 +32,9 @@ static void keyboard_input(nes_t *nes, SDL_Keycode sc, bool keydown) {
     case SDLK_d:  // D = right
       n = 7;
       break;
+    case SDLK_r:  // R = reset;
+      nes_reset(nes);
+      return;
     default:
       printf("keyboard_input: invalid input on key%s=%d\n", keydown ? "down" : "up", sc);
       return;
@@ -58,15 +61,15 @@ int main(int argc, char **argv) {
 
   // Initialize the NES and display window
   nes_t nes;
+  args_t args;
   window_t window;
 
-  nes_init(&nes, argv[1]);
-  window_init(&window);
+  // Use default starting values
+  args_init(&args);
+  args.cart_fn = argv[1];
 
-  // TODO: Make more robust CPU logging
-//  nes.args->cpu_log_output = true;
-  nes.args->cpu_log_output = false;
-  nes.args->cpu_logf = nes_fopen("../logs/cpu.log", "w");
+  nes_init(&nes, &args);
+  window_init(&window);
 
   // TODO: Make this configurable
   SDL_SetWindowSize(window.disp_window, 2 * WINDOW_W, 2 * WINDOW_H);

@@ -37,7 +37,8 @@ typedef struct nes {
   // TODO: Controller 2
 } nes_t;
 
-void nes_init(nes_t *nes, char *cart_fn);
+void nes_init(nes_t *nes, args_t *args);
+void nes_reset(nes_t *nes);
 void nes_destroy(nes_t *nes);
 
 #endif

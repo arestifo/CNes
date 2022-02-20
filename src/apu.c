@@ -25,8 +25,7 @@ const u16 NOISE_SEQ_LENS[16] = {4, 8, 16, 32, 64, 96, 128, 160, 202,
 // Lookup tables
 f64 pulse_periods[2048];
 f64 triangle_periods[2048];
-f64 noise_periods[2048];
-//f64 noise_periods[16];
+f64 noise_periods[16];
 
 u32 env_periods[16];
 f64 pulse_volume_table[31];
@@ -160,7 +159,8 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
     case 0x400E:
       // Noise mode and period
       apu->noise.mode = val >> 7;
-      apu->noise.period = NOISE_SEQ_LENS[val & 0xF];
+//      apu->noise.period = NOISE_SEQ_LENS[val & 0xF];
+      apu->noise.period = val & 0xF;
       break;
     case 0x400F:
       // Noise length counter load
@@ -319,7 +319,7 @@ static void apu_render_audio(apu_t *apu) {
     // **** Noise synth ****
     if (apu->noise.lc > 0 && apu->status.noise_enable) {
       // Increment noise counter and shift noise shift register
-      noise_out = !(apu->noise.shift_reg & 1) * apu_get_envelope_volume(&apu->noise.env);
+      noise_out = (apu->noise.shift_reg & 1) * apu_get_envelope_volume(&apu->noise.env);
     }
 
     // Increment waveform generator counters
@@ -347,7 +347,7 @@ static void apu_render_audio(apu_t *apu) {
 //             pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
 //    } else { debug++; }
 
-    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, dmc_out);
+    i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, 64);
     SDL_QueueAudio(apu->device_id, &final_sample, BYTES_PER_SAMPLE);
   }
 }
@@ -454,21 +454,16 @@ static void apu_init_lookup_tables(apu_t *apu) {
     env_periods[i] = NTSC_CPU_SPEED / (i + 1);
 
   // *************** APU frequency lookup tables ***************
-//  for (int i = 0; i < 2048; i++) {
-//    pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
-//    triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
-//  }
-//
-//  for (int i = 0; i < 16; i++)
-//    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
   for (int i = 0; i < 2048; i++) {
     pulse_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
     triangle_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1));
-    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / (i + 1) / 2);
   }
+
+  for (int i = 0; i < 16; i++)
+    noise_periods[i] = smp_rate_d / (NTSC_CPU_SPEED / NOISE_SEQ_LENS[i]);
 }
 
-void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
+void apu_init(nes_t *nes, u32 sample_rate, u32 buf_len) {
   apu_t *apu = nes->apu;
 
   // Initialize all APU state to zero
@@ -480,7 +475,7 @@ void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
   // Request audio spec. Init code based on
   // https://stackoverflow.com/questions/10110905/simple-sound-wave-generator-with-sdl-in-c
   SDL_AudioSpec want;
-  want.freq = sample_rate;
+  want.freq = (i32) sample_rate;
   want.format = AUDIO_S16SYS;
   want.channels = 1;
   want.callback = NULL;
@@ -488,7 +483,7 @@ void apu_init(nes_t *nes, i32 sample_rate, u32 buf_len) {
   want.samples = buf_len;
 
   if (!(apu->device_id = SDL_OpenAudioDevice(NULL, 0, &want, &apu->audio_spec, 0)))
-    printf("apu_init: could not open audio device!\n");
+    crash_and_burn("apu_init: could not open audio device!\n");
 
   // Initialize APU output level lookup tables
   apu_init_lookup_tables(apu);
