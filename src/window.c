@@ -27,7 +27,7 @@ void window_init(window_t *wnd) {
   wnd->frame_ready = false;
 }
 
-void window_update(window_t *wnd, nes_t *nes) {
+void window_draw_frame(window_t *wnd, nes_t *nes) {
   // One row in the framebuffer is 4 * WINDOW_W bytes long (Framebuffer pixels are ARGB)
   int pitch = 4 * WINDOW_W;
   u32 *pixels = NULL;
@@ -35,16 +35,15 @@ void window_update(window_t *wnd, nes_t *nes) {
   // Grab rendering surface
   SDL_LockTexture(wnd->texture, NULL, (void **) &pixels, &pitch);
   while (!wnd->frame_ready) {
-    // 3 PPU ticks per CPU cycle
-    while (nes->ppu->ticks < nes->cpu->ticks * 3)
-      ppu_tick(nes, wnd, pixels);
-
     cpu_tick(nes);
 
-    // 2 APU ticks per CPU cycle, but we run the APU at the same rate as the CPU  to increase accuracy.
-    // (The number of CPU ticks per frame sequencer clock is a nice round number (7457), while the number of APU ticks
-    // per frame seq. clock is half that which is a bad ugly decimal)
-    while (nes->apu->ticks * 2 < nes->cpu->ticks)
+    // Three PPU ticks per CPU cycle
+    ppu_tick(nes, wnd, pixels);
+    ppu_tick(nes, wnd, pixels);
+    ppu_tick(nes, wnd, pixels);
+
+    // APU tick every two CPU cycles
+    if (nes->cpu->ticks & 1)
       apu_tick(nes);
   }
 

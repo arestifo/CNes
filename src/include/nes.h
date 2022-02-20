@@ -34,7 +34,9 @@ typedef struct nes {
   u8 ctrl1_sr;
   u8 ctrl1_sr_buf;
 
-  // TODO: Controller 2
+  // Controller 2 shift registers
+  u8 ctrl2_sr;
+  u8 ctrl2_sr_buf;
 } nes_t;
 
 void nes_init(nes_t *nes, args_t *args);

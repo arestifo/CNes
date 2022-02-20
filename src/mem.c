@@ -12,10 +12,11 @@ void cpu_write8(nes_t *nes, u16 addr, u8 val) {
   } else if (addr >= 0x2000 && addr <= 0x3FFF) {
     ppu_reg_write(nes, addr % 8, val);
   } else if (addr == CONTROLLER1_PORT) {
-//    printf("cpu_write8: ctrl1 write val=$%02X ctrl1_sr=$%02X ctrl1_sr_buf=$%02X\n", val, nes->ctrl1_sr,
-//           nes->ctrl1_sr_buf);
-    if (val & 1)
+    if (val & 1) {
+      // Continuously reload the controller shift registers with the current buttons being held
       nes->ctrl1_sr = nes->ctrl1_sr_buf;
+      nes->ctrl2_sr = nes->ctrl2_sr_buf;
+    }
   } else if (addr == OAM_DMA_ADDR) {
     // Performs CPU -> PPU OAM DMA. Suspends the CPU for 513 or 514 cycles
     nes->cpu->do_oam_dma = true;
@@ -40,12 +41,13 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     // Shift controller SR at most once per instruction
     nes->ctrl1_sr >>= 1;
 
-//    printf("cpu_read8: ctrl1 read cpu op=%s pc=$%04X retval=$%02X ctrl1_sr_buf=$%02X ticks=%lu mode=%d op_cyc=%d\n",
-//           cpu_opcode_tos(nes->cpu->op.code), nes->cpu->pc, retval, nes->ctrl1_sr_buf, nes->cpu->ticks,
-//           nes->cpu->op.mode, nes->cpu->op.cyc);
     return retval;
   } else if (addr == CONTROLLER2_PORT) {
-    // TODO Controller 2 reads (low priority)
+    u8 retval = nes->ctrl2_sr & 1;
+
+    nes->ctrl2_sr >>= 1;
+
+    return retval;
   } else if (addr == 0x4015) {
     // APU status register
     return apu_read(nes, addr);
@@ -55,8 +57,8 @@ u8 cpu_read8(nes_t *nes, u16 addr) {
     // Cartridge space; read value from mapper
     return nes->mapper->cpu_read(nes, addr);
   } else {
-//    printf("cpu_read8: invalid read from $%04X\n", addr);
-//    exit(EXIT_FAILURE);
+    printf("cpu_read8: invalid read from $%04X\n", addr);
+    exit(EXIT_FAILURE);
   }
   return 0;
 }

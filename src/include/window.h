@@ -11,15 +11,12 @@ typedef struct window {
   SDL_Renderer *renderer;
   SDL_Texture *texture;
 
-  // 256x240 RGB buffer of pixel_surface to be drawn on the screen
-  u32 pixels[WINDOW_H][WINDOW_W];
-
   // Set to true when the frame is done rendering
   bool frame_ready;
 } window_t;
 
 void window_init(window_t *wnd);
-void window_update(window_t *wnd, nes_t *nes);
+void window_draw_frame(window_t *wnd, nes_t *nes);
 void window_destroy(window_t *wnd);
 
 #endif
