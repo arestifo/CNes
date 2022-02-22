@@ -229,9 +229,9 @@ static u32 ppu_render_pixel(nes_t *nes) {
             // The sprite pattern table addr for 8x16 sprites is determined by the sprite's tile number in OAM:
             // TTTT TTTP
             // Where the T bits (bits 1-7) are the tile number and bit 0 is the pattern table base (0x1000 or 0)
-            // That's why we mask the tile index with ~1 (u16 binary 1111 1110) to get the T bits
+            // That's why we mask the tile index with 0xFE (u16 binary 1111 1110) to get the T bits
             pt_base = active_spr.data.tile_idx & 1 ? 0x1000 : 0;
-            pt_addr = pt_base + (active_spr.data.tile_idx & ~1) * 16 + pt_fine_y_offset;
+            pt_addr = pt_base + (active_spr.data.tile_idx & 0xFE) * 16 + pt_fine_y_offset;
           } else {
             // 8x8 sprites
             pt_base = GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_SPR_PT_BASE_BIT) ? 0x1000 : 0;
