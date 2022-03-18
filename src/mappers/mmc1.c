@@ -10,7 +10,8 @@ u8 mmc1_sr_write_num = 0;
 u8 mmc1_sr = 0;
 
 // These are offsets (each of size _banksz) into the CART PRG and CHR rom, used for switching banks
-u8 mmc1_prg_bank = 0xF;  // Init value for PRG bank seems to be 15, I got crashes with any other value
+//u8 mmc1_prg_bank = 0xF;  // Init value for PRG bank seems to be 15, I got crashes with any other value
+u8 mmc1_prg_bank = 0;
 u8 mmc1_chr_bank0 = 0;
 u8 mmc1_chr_bank1 = 0;
 
@@ -34,7 +35,9 @@ static void mmc1_reg_write_helper(nes_t *nes, u8 reg_n, u8 val) {
       switch (val & 3) {
         case 0:
         case 1:
-          printf("mmc1_reg_write_helper: single-screen mirorring might not work yet");
+          printf("mmc1_reg_write_helper: single-screen mirorring might not work yet\n");
+//          nes->mapper->mirror_type = MT_1SCR_B;
+          nes->mapper->mirror_type = MT_1SCR_A;
           break;
         case 2:
           nes->mapper->mirror_type = MT_VERTICAL;
