@@ -84,8 +84,8 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
         apu->pulse1.lc = LC_LENGTHS[apu->pulse1.lc_idx];
 
       // Restart sequence but not divider (seq_c)
-      apu->pulse1.seq_idx = 0;
-      apu->pulse1.seq_c = 0;
+//      apu->pulse1.seq_idx = 0;
+//      apu->pulse1.seq_c = 0;
       apu->pulse1.env.env_seq_i = 0;
       apu->pulse1.env.env_c = 0;
       break;
@@ -121,8 +121,8 @@ void apu_write(nes_t *nes, u16 addr, u8 val) {
         apu->pulse2.lc = LC_LENGTHS[apu->pulse2.lc_idx];
 
       // Restart sequence but not divider (seq_c)
-      apu->pulse2.seq_idx = 0;
-      apu->pulse2.seq_c = 0;
+//      apu->pulse2.seq_idx = 0;
+//      apu->pulse2.seq_c = 0;
       apu->pulse2.env.env_seq_i = 0;
       apu->pulse2.env.env_c = 0;
       break;
@@ -301,38 +301,46 @@ static void apu_render_audio(apu_t *apu) {
 //         apu->noise.seq_c);
   // TODO: Adjust the audio buffer scaling factor dynamically when a buffer underrun is detected
   while (SDL_GetQueuedAudioSize(apu->device_id) < apu->audio_spec.freq / apu->buf_scale_factor) {
-    // **** Pulse 1 synth ****
-    if (apu->pulse1.lc > 0 && apu->pulse1.timer > 7 && apu->status.pulse1_enable) {
-      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * apu_get_envelope_volume(&apu->pulse1.env);
-      apu_clock_sequence_counter(&apu->pulse1.seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
-    }
-
-    // **** Pulse 2 synth ****
-    if (apu->pulse2.lc > 0 && apu->pulse2.timer > 7 && apu->status.pulse2_enable) {
-      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * apu_get_envelope_volume(&apu->pulse2.env);
-      apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
-    }
-
+//    // **** Pulse 1 synth ****
+//    if (apu->status.pulse1_enable && apu->pulse1.lc > 0 && apu->pulse1.timer > 7) {
+//      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * apu_get_envelope_volume(&apu->pulse1.env);
+//      apu_clock_sequence_counter(&apu->pulse1.seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
+//    }
+//
+//    // **** Pulse 2 synth ****
+//    if (apu->status.pulse2_enable && apu->pulse2.lc > 0 && apu->pulse2.timer > 7) {
+//      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * apu_get_envelope_volume(&apu->pulse2.env);
+//      apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
+//    }
+//
     // **** Triangle synth ****
-    if (apu->triangle.lc > 0 && apu->triangle.timer > 2 && apu->triangle.linc > 0 && apu->status.triangle_enable) {
-      triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
-      apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
-    }
+//    printf("pd=%.2f timer=%d, seq_c=%.2f seq_idx=%d\n", TRIANGLE_SMP_PER_SEQ, apu->triangle.timer, apu->triangle.seq_c, apu->triangle.seq_idx);
+//    if (apu->status.triangle_enable && apu->triangle.lc > 0 && apu->triangle.linc > 0) {
+//      triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
+//
+//      // Fix popping in Mega Man 2
+//      if (apu->triangle.timer < 3) {
+//        apu->triangle.seq_c = 0.;
+//      } else {
+//        apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
+//      }
+//    }
 
-    // **** Noise synth ****
-    if (apu->noise.lc > 0 && apu->status.noise_enable) {
-      noise_out = !(apu->noise.shift_reg & 1) * apu_get_envelope_volume(&apu->noise.env);
-      apu->noise.seq_c += 1.;
-      if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
-        apu->noise.seq_c -= NOISE_SMP_PER_SEQ;
 
-        // Shift noise shift register
-        const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
-        u8 feedback_bit = (apu->noise.shift_reg & 1) ^ GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM);
-        apu->noise.shift_reg >>= 1;
-        apu->noise.shift_reg |= feedback_bit << 14;
-      }
-    }
+//    // **** Noise synth ****
+//    if (apu->status.noise_enable && apu->noise.lc > 0) {
+//      noise_out = !(apu->noise.shift_reg & 1) * apu_get_envelope_volume(&apu->noise.env);
+//      apu->noise.seq_c += 1.;
+//      if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
+//        apu->noise.seq_c -= NOISE_SMP_PER_SEQ;
+//
+//        // Shift noise shift register
+//        const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
+//        u8 feedback_bit = (apu->noise.shift_reg & 1) ^ GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM);
+//        apu->noise.shift_reg >>= 1;
+//        apu->noise.shift_reg |= feedback_bit << 14;
+//      }
+//    }
 
     // Mix channels together to get the final sample
     i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, 64);
@@ -379,7 +387,7 @@ static void apu_half_frame_tick(apu_t *apu) {
 void apu_tick(nes_t *nes) {
   apu_t *apu = nes->apu;
 
-  const u32 TICKS_PER_FRAME_SEQ = 7457;  // TODO: Derive this number.
+  const u32 TICKS_PER_FRAME_SEQ = (int) (NTSC_CPU_SPEED / 240);  // 240 APU ticks per second
   if (apu->frame_counter.divider == TICKS_PER_FRAME_SEQ) {
     apu->frame_counter.divider = 0;
 
