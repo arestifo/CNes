@@ -313,7 +313,7 @@ static void apu_render_audio(apu_t *apu) {
 //      apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
 //    }
 //
-    // **** Triangle synth ****
+//    // **** Triangle synth ****
 //    printf("pd=%.2f timer=%d, seq_c=%.2f seq_idx=%d\n", TRIANGLE_SMP_PER_SEQ, apu->triangle.timer, apu->triangle.seq_c, apu->triangle.seq_idx);
 //    if (apu->status.triangle_enable && apu->triangle.lc > 0 && apu->triangle.linc > 0) {
 //      triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
@@ -327,20 +327,20 @@ static void apu_render_audio(apu_t *apu) {
 //    }
 
 
-//    // **** Noise synth ****
-//    if (apu->status.noise_enable && apu->noise.lc > 0) {
-//      noise_out = !(apu->noise.shift_reg & 1) * apu_get_envelope_volume(&apu->noise.env);
-//      apu->noise.seq_c += 1.;
-//      if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
-//        apu->noise.seq_c -= NOISE_SMP_PER_SEQ;
-//
-//        // Shift noise shift register
-//        const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
-//        u8 feedback_bit = (apu->noise.shift_reg & 1) ^ GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM);
-//        apu->noise.shift_reg >>= 1;
-//        apu->noise.shift_reg |= feedback_bit << 14;
-//      }
-//    }
+    // **** Noise synth ****
+    if (apu->status.noise_enable && apu->noise.lc > 0) {
+      noise_out = !(apu->noise.shift_reg & 1) * apu_get_envelope_volume(&apu->noise.env);
+      apu->noise.seq_c += 1.;
+      if (apu->noise.seq_c >= NOISE_SMP_PER_SEQ) {
+        apu->noise.seq_c = 0;
+
+        // Shift noise shift register
+        const u8 FEEDBACK_BIT_NUM = apu->noise.mode ? 6 : 1;
+        u8 feedback_bit = (apu->noise.shift_reg & 1) ^ GET_BIT(apu->noise.shift_reg, FEEDBACK_BIT_NUM);
+        apu->noise.shift_reg >>= 1;
+        apu->noise.shift_reg |= feedback_bit << 14;
+      }
+    }
 
     // Mix channels together to get the final sample
     i16 final_sample = apu_mix_audio(pulse1_out, pulse2_out, triangle_out, noise_out, 64);
