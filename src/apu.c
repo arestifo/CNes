@@ -301,30 +301,30 @@ static void apu_render_audio(apu_t *apu) {
 //         apu->noise.seq_c);
   // TODO: Adjust the audio buffer scaling factor dynamically when a buffer underrun is detected
   while (SDL_GetQueuedAudioSize(apu->device_id) < apu->audio_spec.freq / apu->buf_scale_factor) {
-//    // **** Pulse 1 synth ****
-//    if (apu->status.pulse1_enable && apu->pulse1.lc > 0 && apu->pulse1.timer > 7) {
-//      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * apu_get_envelope_volume(&apu->pulse1.env);
-//      apu_clock_sequence_counter(&apu->pulse1.seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
-//    }
-//
-//    // **** Pulse 2 synth ****
-//    if (apu->status.pulse2_enable && apu->pulse2.lc > 0 && apu->pulse2.timer > 7) {
-//      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * apu_get_envelope_volume(&apu->pulse2.env);
-//      apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
-//    }
-//
-//    // **** Triangle synth ****
-//    printf("pd=%.2f timer=%d, seq_c=%.2f seq_idx=%d\n", TRIANGLE_SMP_PER_SEQ, apu->triangle.timer, apu->triangle.seq_c, apu->triangle.seq_idx);
-//    if (apu->status.triangle_enable && apu->triangle.lc > 0 && apu->triangle.linc > 0) {
-//      triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
-//
-//      // Fix popping in Mega Man 2
-//      if (apu->triangle.timer < 3) {
-//        apu->triangle.seq_c = 0.;
-//      } else {
-//        apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
-//      }
-//    }
+    // **** Pulse 1 synth ****
+    if (apu->status.pulse1_enable && apu->pulse1.lc > 0 && apu->pulse1.timer > 7) {
+      pulse1_out = SQUARE_SEQ[apu->pulse1.duty][apu->pulse1.seq_idx] * apu_get_envelope_volume(&apu->pulse1.env);
+      apu_clock_sequence_counter(&apu->pulse1.seq_c, &apu->pulse1.seq_idx, 8, PULSE1_SMP_PER_SEQ);
+    }
+
+    // **** Pulse 2 synth ****
+    if (apu->status.pulse2_enable && apu->pulse2.lc > 0 && apu->pulse2.timer > 7) {
+      pulse2_out = SQUARE_SEQ[apu->pulse2.duty][apu->pulse2.seq_idx] * apu_get_envelope_volume(&apu->pulse2.env);
+      apu_clock_sequence_counter(&apu->pulse2.seq_c, &apu->pulse2.seq_idx, 8, PULSE2_SMP_PER_SEQ);
+    }
+
+    // **** Triangle synth ****
+    printf("pd=%.2f timer=%d, seq_c=%.2f seq_idx=%d\n", TRIANGLE_SMP_PER_SEQ, apu->triangle.timer, apu->triangle.seq_c, apu->triangle.seq_idx);
+    if (apu->status.triangle_enable && apu->triangle.lc > 0 && apu->triangle.linc > 0) {
+      triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
+
+      // Fix popping in Mega Man 2
+      if (apu->triangle.timer < 3) {
+        apu->triangle.seq_c = 0.;
+      } else {
+        apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
+      }
+    }
 
 
     // **** Noise synth ****
