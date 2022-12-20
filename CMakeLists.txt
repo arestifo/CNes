@@ -6,7 +6,6 @@ set(CMAKE_C_FLAGS "-Ofast -Wall -Winline")
 find_package(SDL2 REQUIRED)
 
 file(GLOB CNES_SRC CONFIGURE_DEPENDS "src/*.c" "src/mappers/*.c" "src/include/*.h")
-
 add_executable(CNES ${CNES_SRC})
 
 # SDL2

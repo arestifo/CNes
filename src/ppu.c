@@ -371,7 +371,7 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
   }
 
   // **** V/T updates and scrolling ****
-  if ((SCANLINE >= 0 && SCANLINE <= 239)) {
+  if (SCANLINE >= 0 && SCANLINE <= 239) {
     if (DOT >= 1 && DOT <= 256)
       ppu_increment_scroll_x(ppu);
     if (DOT == 256)
@@ -393,8 +393,13 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
 
   // Increment PPU position
   ppu->ticks++;
-  ppu->dot = ppu->ticks % DOTS_PER_SCANLINE;
-  ppu->scanline = (ppu->ticks / DOTS_PER_SCANLINE) % NUM_SCANLINES;
+//  ppu->dot++;
+
+  if (++ppu->dot >= DOTS_PER_SCANLINE) {
+      ppu->dot = 0;
+      if (++ppu->scanline >= NUM_SCANLINES)
+          ppu->scanline = 0;
+  }
 }
 
 u8 ppu_reg_read(nes_t *nes, ppureg_t reg) {
