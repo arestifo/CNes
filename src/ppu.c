@@ -276,8 +276,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
   else if (!spr_color_idx)
     final_pixel = ppu_get_palette_color(ppu, bgr_color_idx);
   else {
-    // Sprite pixel and background pixel are both opaque; a precondition for spite zero hit
-    // detection.
+    // Sprite pixel and background pixels both being opaque are preconditions for spite zero hit detection.
     if (sprite_zerohit && !GET_BIT(ppu->reg[PPUSTATUS], PPUSTATUS_ZEROHIT_BIT)) {
 //      printf("frame %lu: s0 hit at [%d, %d], bgr_idx=%d spr_idx=%d\n", ppu->frameno, cur_x, cur_y, bgr_color_idx,
 //             spr_color_idx);
