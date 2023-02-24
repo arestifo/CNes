@@ -3,9 +3,19 @@
 
 #include "nes.h"
 
+// There are 2^16 possible PPU addresses and four mirroring modes
+#define PPU_ADDR_CACHE_SIZE ((1 << 16) * 4)
+
 typedef enum mirror_type {
   MT_HORIZONTAL, MT_VERTICAL, MT_1SCR_A, MT_1SCR_B
 } mirror_type_t;
+
+// There are four PPU address mirroring types and 2^16 addresses, so we can build a lookup table on startup to
+// cache the mirrored addresses and not have to compute them every time
+typedef struct ppu_cache {
+    mirror_type_t mtype;
+    u16 addr;
+} ppu_cache_t;
 
 // Supported mappers:
 // Maps iNES mapper numbers to mapper functions
@@ -33,7 +43,8 @@ typedef struct mapper {
 void mapper_init(mapper_t *mapper, cart_t *cart);
 void mapper_destroy(mapper_t *mapper);
 
-u16 mirror_ppu_addr(u16 addr, mirror_type_t mt);
+u16 mapper_ppu_addr(u16 addr, mirror_type_t mt);
+void mapper_init_ppu_cache(u16 *cache_arr);
 
 // ******** Mapper-specific R/W functions ********
 // **** NROM ****

@@ -128,7 +128,7 @@ u8 mmc1_cpu_read(nes_t *nes, u16 addr) {
 u8 mmc1_ppu_read(nes_t *nes, u16 addr) {
   cart_t *crt = nes->cart;
 
-  u16 d_addr = mirror_ppu_addr(addr, nes->mapper->mirror_type);
+  u16 d_addr = mapper_ppu_addr(addr, nes->mapper->mirror_type);
   if (addr <= 0x3EFF) {
     switch (mmc1_chr_banksz) {
       case 0x1000:
@@ -187,5 +187,5 @@ void mmc1_cpu_write(nes_t *nes, u16 addr, u8 val) {
 
 void mmc1_ppu_write(nes_t *nes, u16 addr, u8 val) {
   // TODO: Is this correct?
-  nes->cart->chr[mirror_ppu_addr(addr, nes->mapper->mirror_type)] = val;
+  nes->cart->chr[mapper_ppu_addr(addr, nes->mapper->mirror_type)] = val;
 }

@@ -314,7 +314,7 @@ static void apu_render_audio(apu_t *apu) {
     }
 
     // **** Triangle synth ****
-    printf("pd=%.2f timer=%d, seq_c=%.2f seq_idx=%d\n", TRIANGLE_SMP_PER_SEQ, apu->triangle.timer, apu->triangle.seq_c, apu->triangle.seq_idx);
+//    printf("pd=%.2f timer=%d, seq_c=%.2f seq_idx=%d\n", TRIANGLE_SMP_PER_SEQ, apu->triangle.timer, apu->triangle.seq_c, apu->triangle.seq_idx);
     if (apu->status.triangle_enable && apu->triangle.lc > 0 && apu->triangle.linc > 0) {
       triangle_out = TRIANGLE_SEQ[apu->triangle.seq_idx];
 
@@ -478,8 +478,8 @@ void apu_init(nes_t *nes, u32 sample_rate, u32 buf_len) {
   want.userdata = NULL;
   want.samples = buf_len;
 
-  if (!(apu->device_id = SDL_OpenAudioDevice(NULL, 0, &want, &apu->audio_spec, 0)))
-    crash_and_burn("apu_init: could not open audio device!\n");
+  if ((apu->device_id = SDL_OpenAudioDevice(NULL, 0, &want, &apu->audio_spec, 0)) == 0)
+    crash_and_burn("apu_init: could not open audio device: %s\n", SDL_GetError());
 
   // Initialize APU output level lookup tables
   apu_init_lookup_tables(apu);

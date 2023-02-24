@@ -14,7 +14,7 @@ u8 axrom_cpu_read(nes_t *nes, u16 addr) {
 }
 
 u8 axrom_ppu_read(nes_t *nes, u16 addr) {
-  return nes->cart->chr[mirror_ppu_addr(addr, nes->mapper->mirror_type)];
+  return nes->cart->chr[mapper_ppu_addr(addr, nes->mapper->mirror_type)];
 }
 
 void axrom_cpu_write(nes_t *nes, u16 addr, u8 val) {
@@ -27,5 +27,5 @@ void axrom_cpu_write(nes_t *nes, u16 addr, u8 val) {
 }
 
 void axrom_ppu_write(nes_t *nes, u16 addr, u8 val) {
-  nes->cart->chr[mirror_ppu_addr(addr, nes->mapper->mirror_type)] = val;
+  nes->cart->chr[mapper_ppu_addr(addr, nes->mapper->mirror_type)] = val;
 }

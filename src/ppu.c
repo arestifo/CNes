@@ -16,6 +16,8 @@ static void ppu_palette_init(nes_t *nes, char *palette_fn) {
   color_t pal[PALETTE_SZ];
 
   // Read in the palette
+  // Since we're directly reading palette data into struct, we need to make sure that each palette struct is three
+  // bytes long. (R,G,B)
   assert(sizeof *pal == 3);
   FILE *palette_f = nes_fopen(palette_fn, "rb");
   nes_fread(pal, sizeof *pal, PALETTE_SZ, palette_f);
@@ -393,7 +395,6 @@ void ppu_tick(nes_t *nes, window_t *wnd, void *pixels) {
 
   // Increment PPU position
   ppu->ticks++;
-//  ppu->dot++;
 
   if (++ppu->dot >= DOTS_PER_SCANLINE) {
       ppu->dot = 0;
