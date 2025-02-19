@@ -17,5 +17,5 @@ void args_init(args_t *args) {
 void args_destroy(args_t *args) {
   if (args->cpu_logf)
     nes_fclose(args->cpu_logf);
-  bzero(args, sizeof *args);
+  memset(args, 0, sizeof *args);
 }

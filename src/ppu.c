@@ -41,7 +41,7 @@ void ppu_init(nes_t *nes) {
   ppu_t *ppu = nes->ppu;
 
   // Initialize all PPU fields to zero
-  bzero(ppu, sizeof *ppu);
+  memset(ppu, 0, sizeof *ppu);
 
   // Set up system palette
   ppu_palette_init(nes, "../palette/palette.pal");
@@ -292,7 +292,7 @@ static u32 ppu_render_pixel(nes_t *nes) {
 // Does a linear search through OAM to find up to 8 sprites to render for the given scanline
 static void ppu_fill_sec_oam(ppu_t *ppu, u16 scanline) {
   // Clear the list of sprites to draw (secondary OAM)
-  bzero(ppu->sec_oam, SEC_OAM_NUM_SPR * sizeof *ppu->sec_oam);
+  memset(ppu->sec_oam, 0, SEC_OAM_NUM_SPR * sizeof *ppu->sec_oam);
 
   // Search through OAM to find sprites that are in range
   const u8 SPR_HEIGHT = GET_BIT(ppu->reg[PPUCTRL], PPUCTRL_SPRITE_SZ_BIT) ? 16 : 8;
@@ -535,6 +535,6 @@ void ppu_write(nes_t *nes, u16 addr, u8 val) {
 }
 
 void ppu_destroy(nes_t *nes) {
-  bzero(nes->ppu, sizeof *nes->ppu);
+  memset(nes->ppu, 0, sizeof *nes->ppu);
 }
 

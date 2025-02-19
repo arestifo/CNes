@@ -59,7 +59,7 @@ void mapper_init(mapper_t *mapper, cart_t *cart) {
 }
 
 void mapper_destroy(mapper_t *mapper) {
-  bzero(mapper, sizeof *mapper);
+  memset(mapper, 0, sizeof *mapper);
 }
 
 u16 mapper_init_ppu_cache_helper(u16 addr, mirror_type_t mt) {
@@ -106,7 +106,7 @@ u16 mapper_init_ppu_cache_helper(u16 addr, mirror_type_t mt) {
 }
 
 void mapper_init_ppu_cache(u16 *cache_arr) {
-  bzero(ppu_addr_cache, PPU_ADDR_CACHE_SIZE);
+  memset(ppu_addr_cache, 0, PPU_ADDR_CACHE_SIZE);
 
   for (u8 mtype = 0; mtype < 4; mtype++) {
     for (u32 baseaddr = 0; baseaddr < 65536; baseaddr++) {

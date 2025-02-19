@@ -1004,7 +1004,7 @@ void cpu_tick(nes_t *nes) {
 void cpu_init(nes_t *nes) {
   // NES power up state
   cpu_t *cpu = nes->cpu;
-  bzero(cpu, sizeof *cpu);
+  memset(cpu, 0, sizeof *cpu);
 
   // TODO: The mystery of starting ticks == 7... that's what nestest starts at but I want to derive this value.
   cpu->ticks = 7;
@@ -1021,7 +1021,7 @@ void cpu_init(nes_t *nes) {
 }
 
 void cpu_destroy(nes_t *nes) {
-  bzero(nes->cpu, sizeof *nes->cpu);
+  memset(nes->cpu, 0, sizeof *nes->cpu);
 }
 
 static void cpu_log_op(nes_t *nes, bool debug_nmi) {

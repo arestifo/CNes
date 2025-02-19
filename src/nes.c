@@ -7,7 +7,7 @@
 #include "include/apu.h"
 
 void nes_init(nes_t *nes, args_t *args) {
-  bzero(nes, sizeof *nes);
+  memset(nes, 0, sizeof *nes);
 
   nes->args   = args;
   nes->cpu    = nes_malloc(sizeof *nes->cpu);

@@ -296,9 +296,9 @@ static void apu_render_audio(apu_t *apu) {
   const f64 NOISE_SMP_PER_SEQ = noise_periods[apu->noise.period];
 
   u8 pulse1_out = 0, pulse2_out = 0, triangle_out = 0, noise_out = 0, dmc_out = 0;
-//  printf("apu_render_audio: bufsz=%d p1 seq_c=%.2f, p2 seq_c=%.2f, t seq_c=%.2f, n seq_c=%.2f\n",
-//         SDL_GetQueuedAudioSize(apu->device_id), apu->pulse1.seq_c, apu->pulse2.seq_c, apu->triangle.seq_c,
-//         apu->noise.seq_c);
+  // printf("apu_render_audio: bufsz=%d p1 seq_c=%.2f, p2 seq_c=%.2f, t seq_c=%.2f, n seq_c=%.2f\n",
+  //        SDL_GetQueuedAudioSize(apu->device_id), apu->pulse1.seq_c, apu->pulse2.seq_c, apu->triangle.seq_c,
+  //        apu->noise.seq_c);
   // TODO: Adjust the audio buffer scaling factor dynamically when a buffer underrun is detected
   while (SDL_GetQueuedAudioSize(apu->device_id) < apu->audio_spec.freq / apu->buf_scale_factor) {
     // **** Pulse 1 synth ****
@@ -325,7 +325,6 @@ static void apu_render_audio(apu_t *apu) {
         apu_clock_sequence_counter(&apu->triangle.seq_c, &apu->triangle.seq_idx, 32, TRIANGLE_SMP_PER_SEQ);
       }
     }
-
 
     // **** Noise synth ****
     if (apu->status.noise_enable && apu->noise.lc > 0) {
@@ -463,7 +462,7 @@ void apu_init(nes_t *nes, u32 sample_rate, u32 buf_len) {
   apu_t *apu = nes->apu;
 
   // Initialize all APU state to zero
-  bzero(apu, sizeof *apu);
+  memset(apu, 0, sizeof *apu);
 
   apu->buf_scale_factor = 16;
   apu->noise.shift_reg = 1;
